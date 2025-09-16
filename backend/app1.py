@@ -37,6 +37,10 @@ class Config:
 
 # --- APPLICATION SETUP ---
 app = Flask(__name__)
+# Add this route to handle the root URL
+@app.route('/')
+def home():
+    return "Your project is working!"
 app.config.from_object(Config)
 
 # Ensure the upload folder exists
@@ -57,7 +61,6 @@ def send_whatsapp_reminders():
             # In a real app, you would use a WhatsApp API service here.
             # For now, we'll just log it and update the status.
             print(f"Sending reminder to {reminder.customer_phone} for {reminder.medicine_name}")
-
             # This is a placeholder for the actual WhatsApp sending logic.
             # You would construct a message and send it via an API like Twilio.
 
@@ -222,6 +225,10 @@ class Shortage(db.Model):
             'status': self.status
         }
     
+
+
+# You can add other routes below this
+# ...
 
 # --- DECORATORS & HELPERS ---
 def login_required(f):
