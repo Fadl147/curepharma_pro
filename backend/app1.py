@@ -23,15 +23,16 @@ ADMIN_PHONE_NUMBERS = ['917702164957'] # Add any other admin numbers here
 # --- CONFIGURATION ---
 class Config:
     """Application configuration."""
-    # For production, load secrets from environment variables
-    # e.g., SECRET_KEY = os.environ.get('SECRET_KEY')
-    SECRET_KEY = "a-more-secure-and-refactored-secret-key"
-    
-    # Database configuration
+    SECRET_KEY = os.environ.get("SECRET_KEY", "a-more-secure-and-refactored-secret-key")
+
+    # Use DATABASE_URL from environment if available, otherwise fallback to SQLite
     BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-    SQLALCHEMY_DATABASE_URI = f"sqlite:///{os.path.join(BASE_DIR, 'inventory.db')}"
+    SQLALCHEMY_DATABASE_URI = os.environ.get(
+        "DATABASE_URL",
+        f"sqlite:///{os.path.join(BASE_DIR, 'inventory.db')}"
+    )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    
+
     # Uploads folder
     UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 
