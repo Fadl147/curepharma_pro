@@ -1,5 +1,19 @@
-"venv/" 
-"__pycache__/" 
-"*.pyc" 
-"node_modules/" 
-"build/" 
+# Python
+*.pyc
+__pycache__/
+
+# Virtual environment
+venv/
+
+# Databases
+*.db
+
+# Uploads
+backend/uploads/
+
+# Build
+backend/build/
+
+# IDE / system files
+*.log
+.DS_Store

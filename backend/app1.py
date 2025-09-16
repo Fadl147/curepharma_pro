@@ -5,8 +5,11 @@ import os
 from flask_migrate import Migrate
 import csv
 from datetime import datetime, timedelta
+import pytz 
 from functools import wraps
 from apscheduler.schedulers.background import BackgroundScheduler
+from collections import defaultdict
+
 
 from flask import Flask, request, jsonify, session, render_template_string
 from flask_sqlalchemy import SQLAlchemy
@@ -94,6 +97,8 @@ class Medicine(db.Model):
     amount = db.Column(db.Float)
     gst = db.Column(db.Float)
     netvalue = db.Column(db.Float)
+    category = db.Column(db.String(50), nullable=True, default='General')
+    formula = db.Column(db.String(255), nullable=True)
 
 
 
@@ -131,10 +136,11 @@ class CustomerInvoice(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     customer_name = db.Column(db.String(100))
     customer_phone = db.Column(db.String(20))
-    bill_date = db.Column(db.DateTime, default=datetime.utcnow)
+    bill_date = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Kolkata')))
     grand_total = db.Column(db.Float, nullable=False)
     payment_mode = db.Column(db.String(20), default='Cash') 
     items = db.relationship('CustomerInvoiceItem', backref='invoice', lazy=True, cascade="all, delete-orphan")
+    
 
 class CustomerInvoiceItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -144,6 +150,8 @@ class CustomerInvoiceItem(db.Model):
     mrp = db.Column(db.Float, nullable=False)
     discount_percent = db.Column(db.Float, default=0)
     total_price = db.Column(db.Float, nullable=False)
+    ptr = db.Column(db.Float, default=0.0) # <-- ADD THIS LINE
+    gst = db.Column(db.Float, default=0.0)
 
 class PurchaseInvoice(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -238,6 +246,88 @@ def parse_date(date_string):
     except (ValueError, TypeError):
         return None
 
+@app.route("/api/advanced-sales-report")
+@login_required
+def get_advanced_sales_report():
+    """
+    Generates a comprehensive sales and profit report for a given date range.
+    """
+    try:
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
+
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid or missing date range. Please provide start_date and end_date in YYYY-MM-DD format."}), 400
+
+    # 1. Calculate Total Sales and Profit for the period
+    period_totals = db.session.query(
+        func.sum(CustomerInvoice.grand_total).label('total_sales'),
+        func.sum(
+            ((CustomerInvoiceItem.mrp * (1 - CustomerInvoiceItem.discount_percent / 100)) - (Medicine.ptr * (1 + Medicine.gst / 100))) * CustomerInvoiceItem.quantity
+        ).label('total_profit')
+    ).select_from(CustomerInvoice).join(CustomerInvoiceItem, ...).join(Medicine, ...).filter(...).first()
+
+    daily_trends = db.session.query(
+        func.date(CustomerInvoice.bill_date).label('date'),
+        func.sum(CustomerInvoice.grand_total).label('sales'),
+        func.sum(
+            ((CustomerInvoiceItem.mrp * (1 - CustomerInvoiceItem.discount_percent / 100)) - (Medicine.ptr * (1 + Medicine.gst / 100))) * CustomerInvoiceItem.quantity
+        ).label('profit')
+    ).select_from(CustomerInvoice).join(CustomerInvoiceItem, ...).join(Medicine, ...).filter(...).group_by(...).order_by(...).all()
+
+    top_profitable_products = db.session.query(
+        CustomerInvoiceItem.medicine_name,
+        func.sum(
+            ((CustomerInvoiceItem.mrp * (1 - CustomerInvoiceItem.discount_percent / 100)) - (Medicine.ptr * (1 + Medicine.gst / 100))) * CustomerInvoiceItem.quantity
+        ).label('total_profit')
+    ).select_from(CustomerInvoice).join(CustomerInvoiceItem, ...).join(Medicine, ...).filter(...).group_by(...).order_by(...).limit(5).all()
+
+    # 3. Get Top 5 Best-Selling Products (by quantity)
+    top_selling_products = db.session.query(
+        CustomerInvoiceItem.medicine_name,
+        func.sum(CustomerInvoiceItem.quantity).label('total_quantity_sold')
+    ).join(CustomerInvoice, CustomerInvoice.id == CustomerInvoiceItem.invoice_id)\
+     .filter(CustomerInvoice.bill_date.between(start_date, end_date + timedelta(days=1)))\
+     .group_by(CustomerInvoiceItem.medicine_name)\
+     .order_by(func.sum(CustomerInvoiceItem.quantity).desc())\
+     .limit(5)\
+     .all()
+
+    # 4. Get Top 5 Most Profitable Products
+    top_profitable_products = db.session.query(
+        CustomerInvoiceItem.medicine_name,
+        func.sum(
+            (CustomerInvoiceItem.mrp - (Medicine.ptr * (1 + Medicine.gst / 100))) * CustomerInvoiceItem.quantity
+        ).label('total_profit')
+    ).select_from(CustomerInvoice)\
+     .join(CustomerInvoiceItem, CustomerInvoice.id == CustomerInvoiceItem.invoice_id)\
+     .join(Medicine, CustomerInvoiceItem.medicine_name == Medicine.name)\
+     .filter(CustomerInvoice.bill_date.between(start_date, end_date + timedelta(days=1)))\
+     .group_by(CustomerInvoiceItem.medicine_name)\
+     .order_by(func.sum((CustomerInvoiceItem.mrp - (Medicine.ptr * (1 + Medicine.gst / 100))) * CustomerInvoiceItem.quantity).desc())\
+     .limit(5)\
+     .all()
+
+    report = {
+        "period_totals": {
+            "total_sales": float(period_totals.total_sales or 0),
+            "total_profit": float(period_totals.total_profit or 0)
+        },
+        "daily_trends": [
+            # The database returns a string, so we use it directly. No .strftime() needed.
+            {"date": d.date, "sales": float(d.sales or 0), "profit": float(d.profit or 0)} for d in daily_trends
+        ],
+        "top_selling_products": [
+            {"name": p.medicine_name, "value": int(p.total_quantity_sold)} for p in top_selling_products
+        ],
+        "top_profitable_products": [
+            {"name": p.medicine_name, "value": float(p.total_profit or 0)} for p in top_profitable_products
+        ]
+    }
+    
+    return jsonify(report)
 
 # --- AUTHENTICATION ROUTES ---
 @app.route("/api/signup", methods=["POST"])
@@ -285,6 +375,8 @@ def check_session():
         user_data = {"id": session['user_id'], "name": session['user_name'], "role": session.get('user_role', 'customer')}
         return jsonify({"isLoggedIn": True, "user": user_data}), 200
     return jsonify({"isLoggedIn": False}), 401
+
+
 
 
 
@@ -349,22 +441,30 @@ def get_my_orders():
         
     return jsonify(order_list)
 
-
-# --- Also, remove the two Razorpay endpoints we added previously ---
-# DELETE the '/api/payment/create-order' and '/api/payment/verify' routes.
-
-
 # --- MEDICINE ROUTES ---
+# In app_refactored.py, replace the get_medicines function
+
 @app.route("/api/medicines", methods=["GET"])
 def get_medicines():
-    query = request.args.get('q', '').strip()
+    query_term = request.args.get('q', '').strip()
+    category_param = request.args.get('category', '')
     filter_param = request.args.get('filter', '')
     
     base_query = Medicine.query
     
-    if query:
-        base_query = base_query.filter(Medicine.name.ilike(f'%{query}%'))
-    
+    # --- MODIFIED: Unified Search Logic ---
+    if query_term:
+        search_term_like = f'%{query_term}%'
+        base_query = base_query.filter(
+            or_(
+                Medicine.name.ilike(search_term_like),
+                Medicine.formula.ilike(search_term_like)
+            )
+        )
+
+    if category_param:
+        base_query = base_query.filter(Medicine.category == category_param)
+
     today = datetime.now().date()
     if filter_param == 'low_stock':
         base_query = base_query.filter(Medicine.quantity < 3)
@@ -374,8 +474,21 @@ def get_medicines():
         sixty_days_later = today + timedelta(days=60)
         base_query = base_query.filter(Medicine.expiry_date.between(today, sixty_days_later))
 
-    medicines = base_query.order_by(Medicine.name).all()
+   # --- THIS IS THE FIX ---
+    # Order the results first
+    base_query = base_query.order_by(Medicine.name)
+
+    # Only apply the limit if a search term is present
+    if query_term:
+        base_query = base_query.limit(10)
+
+    medicines = base_query.all()
+    # --- END OF FIX ---
+    
     return jsonify([med.to_dict() for med in medicines])
+
+
+
 
 @app.route("/api/medicines", methods=["POST"])
 @login_required
@@ -384,23 +497,38 @@ def add_medicine():
     if not data or not data.get('name'):
         return jsonify({"error": "Medicine name is required"}), 400
 
-    net_value = calculate_net_value(data.get('amount', 0.0), data.get('gst', 0.0))
+    # --- THIS IS THE CORRECTED LOGIC ---
+    # We now handle empty strings by defaulting to '0' before converting to a number.
+    ptr_str = data.get('ptr') or '0'
+    gst_str = data.get('gst') or '0'
+    quantity_str = data.get('quantity') or '0'
+    freeqty_str = data.get('freeqty') or '0'
+    mrp_str = data.get('mrp') or '0'
+
+    ptr = float(ptr_str)
+    gst = float(gst_str)
+    quantity = int(quantity_str)
     
+    # 'Amount' is the total purchase value for this quantity, after GST
+    amount = (ptr * quantity) * (1 + gst / 100)
+
     new_med = Medicine(
         name=data['name'],
-        quantity=int(data.get('quantity', 0)),
-        freeqty=int(data.get('freeqty', 0)),
+        quantity=quantity,
+        freeqty=int(freeqty_str),
         batch_no=data.get('batch_no'),
         expiry_date=parse_date(data.get('expiry_date')),
-        mrp=float(data.get('mrp', 0.0)),
-        ptr=float(data.get('ptr', 0.0)),
-        amount=float(data.get('amount', 0.0)),
-        gst=float(data.get('gst', 0.0)),
-        netvalue=net_value
+        mrp=float(mrp_str),
+        ptr=ptr,
+        gst=gst,
+        amount=amount,
+        category=data.get('category', 'General'),
+        formula=data.get('formula')
     )
     db.session.add(new_med)
     db.session.commit()
     return jsonify(new_med.to_dict()), 201
+
 
 @app.route("/api/medicines/<int:med_id>", methods=["PUT"])
 @login_required
@@ -408,19 +536,51 @@ def update_medicine(med_id):
     med = Medicine.query.get_or_404(med_id)
     data = request.get_json()
 
-    for key, value in data.items():
-        if key == 'expiry_date':
-            med.expiry_date = parse_date(value)
-        elif hasattr(med, key) and key not in ['id', 'netvalue']:
-            setattr(med, key, value)
-    
-    # Recalculate netvalue if amount or gst was part of the update
-    amount = float(data.get('amount', med.amount))
-    gst_percent = float(data.get('gst', med.gst))
-    med.netvalue = calculate_net_value(amount, gst_percent)
+    try:
+        # --- Explicitly update each field to ensure correct data types ---
+        med.name = data.get('name', med.name)
+        med.quantity = int(data.get('quantity', med.quantity))
+        med.freeqty = int(data.get('freeqty', med.freeqty))
+        med.batch_no = data.get('batch_no', med.batch_no)
+        med.mrp = float(data.get('mrp', med.mrp))
+        med.ptr = float(data.get('ptr', med.ptr))
+        med.gst = float(data.get('gst', med.gst))
+        med.category = data.get('category', med.category)
+        med.formula = data.get('formula', med.formula)
+        
+        # This line now correctly handles both empty and valid date strings
+        med.expiry_date = parse_date(data.get('expiry_date'))
 
-    db.session.commit()
-    return jsonify(med.to_dict())
+        # Recalculate the total purchase amount automatically
+        # using the newly updated values
+        med.amount = (med.ptr * med.quantity) * (1 + med.gst / 100)
+
+        db.session.commit()
+        return jsonify(med.to_dict())
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error updating medicine: {e}")
+        return jsonify({"error": "An internal server error occurred during update."}), 500
+    
+
+@app.route("/api/medicines/<int:med_id>", methods=["GET"])
+def get_medicine_details(med_id):
+    """Fetches specific details for a single medicine by its ID."""
+    medicine = Medicine.query.get_or_404(med_id)
+    
+    # Manually build the response with only the required fields
+    medicine_details = {
+        "id": medicine.id,
+        "name": medicine.name,
+        "formula": medicine.formula or None,
+        "mrp": medicine.mrp,
+        "quantity": medicine.quantity,
+        "category": medicine.category
+    }
+    
+    return jsonify(medicine_details)
+
 
 @app.route("/api/medicines/<int:med_id>", methods=["DELETE"])
 @login_required
@@ -430,6 +590,133 @@ def delete_medicine(med_id):
     db.session.commit()
     return jsonify({"message": f"Medicine '{med.name}' deleted"}), 200
 
+@app.route("/api/customers/all-phones")
+@login_required
+def get_all_customer_phones():
+    """Fetches a list of all unique and valid Indian customer phone numbers."""
+    
+    all_phones_query = db.session.query(CustomerInvoice.customer_phone).distinct().all()
+    all_phones = [phone[0] for phone in all_phones_query if phone[0]]
+    
+    # --- NEW: More Intelligent Filtering Logic ---
+    valid_indian_phones = set() # Use a set to automatically handle duplicates
+    for phone in all_phones:
+        # 1. Clean the number by removing all non-digit characters
+        cleaned_phone = "".join(filter(str.isdigit, phone))
+        
+        # 2. If the number is 10 digits, add '91' to the front
+        if len(cleaned_phone) == 10:
+            valid_indian_phones.add("91" + cleaned_phone)
+        # 3. If the number is already 12 digits and starts with '91', add it
+        elif len(cleaned_phone) == 12 and cleaned_phone.startswith('91'):
+            valid_indian_phones.add(cleaned_phone)
+            
+    return jsonify(list(valid_indian_phones))
+
+@app.route("/api/billing", methods=["POST"])
+@login_required
+def create_bill():
+    data = request.get_json()
+    customer_info = data.get('customer')
+    items = data.get('items')
+    payment_mode = data.get('paymentMode', 'Cash')
+
+    if not all([customer_info, items]):
+        return jsonify({"error": "Missing customer information or items"}), 400
+
+    try:
+        grand_total = 0
+        invoice_items = []
+        
+        # --- THIS IS THE FIX: Track new medicines within this single transaction ---
+        newly_added_medicines = set()
+
+        for item in items:
+            if item.get('isManual', False) and item.get('saveToInventory', False):
+                item_name = item['name']
+                # Check if we already processed this name OR if it's already in the DB
+                if item_name not in newly_added_medicines and not Medicine.query.filter_by(name=item_name).first():
+                    new_inventory_item = Medicine(
+                        name=item_name,
+                        mrp=float(item.get('mrp', 0.0)),
+                        ptr=float(item.get('ptr', 0.0)),
+                        gst=0.0,
+                        quantity=0
+                    )
+                    db.session.add(new_inventory_item)
+                    # Add the name to our tracker to prevent duplicates in the same bill
+                    newly_added_medicines.add(item_name)
+            
+            item_ptr = float(item.get('ptr', 0.0))
+            item_gst = 0.0
+
+            if not item.get('isManual', False):
+                medicine = Medicine.query.get(item['id'])
+                if not medicine or medicine.quantity < int(item['quantity']):
+                    db.session.rollback()
+                    return jsonify({"error": f"Not enough stock for {item['name']}"}), 400
+                medicine.quantity -= int(item['quantity'])
+                item_ptr = medicine.ptr
+                item_gst = medicine.gst
+
+            amount = int(item['quantity']) * float(item['mrp'])
+            discount = float(item.get('discount', 0))
+            discounted_amount = amount * (1 - discount / 100)
+            grand_total += discounted_amount
+            
+            invoice_items.append(CustomerInvoiceItem(
+                medicine_name=item['name'],
+                quantity=int(item['quantity']),
+                mrp=float(item['mrp']),
+                discount_percent=discount,
+                total_price=discounted_amount,
+                ptr=item_ptr,
+                gst=item_gst
+            ))
+        
+        new_invoice = CustomerInvoice(
+            customer_name=customer_info.get('name', 'N/A'), 
+            customer_phone=customer_info.get('phone', 'N/A'), 
+            grand_total=grand_total,
+            items=invoice_items,
+            payment_mode=payment_mode
+        )
+        db.session.add(new_invoice)
+        db.session.flush()
+
+        today = datetime.now().date()
+        for item in items:
+            reminder_days_str = item.get('reminder_days')
+            if reminder_days_str:
+                try:
+                    reminder_days = int(reminder_days_str)
+                    if reminder_days > 0:
+                        reminder_date = today + timedelta(days=reminder_days)
+                        new_reminder = Reminder(customer_name=customer_info.get('name', 'N/A'), customer_phone=customer_info.get('phone', 'N/A'), medicine_name=item['name'], reminder_date=reminder_date, invoice_id=new_invoice.id)
+                        db.session.add(new_reminder)
+                except (ValueError, TypeError):
+                    pass
+        
+        db.session.commit()
+        return jsonify({"message": "Bill created successfully", "invoiceId": new_invoice.id}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error creating bill: {e}")
+        return jsonify({"error": "An internal server error occurred."}), 500
+    
+
+def safe_int(value, default=0):
+    try:
+        return int(str(value).strip() or default)
+    except (ValueError, TypeError):
+        return default
+
+def safe_float(value, default=0.0):
+    try:
+        return float(str(value).replace('%', '').strip() or default)
+    except (ValueError, TypeError):
+        return default
 
 # --- CSV IMPORT ROUTE ---
 @app.route("/api/medicines/import", methods=["POST"])
@@ -457,9 +744,11 @@ def import_medicines_csv():
                     continue
 
                 existing_medicine = Medicine.query.filter_by(name=medicine_name).first()
-                quantity = int(row.get('quantity', '0') or 0)
-                amount = float(row.get('amount', '0').replace('%', '').strip() or 0.0)
-                gst_percent = float(row.get('gst', '0').replace('%', '').strip() or 0.0)
+                quantity = safe_int(row.get('quantity', '0') or 0)
+                amount = safe_float(row.get('amount', '0').replace('%', '').strip() or 0.0)
+                gst_percent = safe_float(row.get('gst', '0').replace('%', '').strip() or 0.0)
+                formula = row.get('formula', '').strip()
+
                 
                 if existing_medicine:
                     existing_medicine.quantity += quantity
@@ -468,14 +757,15 @@ def import_medicines_csv():
                     new_med = Medicine(
                         name=medicine_name,
                         quantity=quantity,
-                        freeqty=int(row.get('freeqty', '0') or 0),
+                        freeqty=safe_int(row.get('freeqty', '0') or 0),
                         batch_no=row.get('batch_no'),
                         expiry_date=parse_date(row.get('expiry_date')),
-                        mrp=float(row.get('mrp', '0.0') or 0.0),
-                        ptr=float(row.get('ptr', '0.0') or 0.0),
+                        mrp=safe_float(row.get('mrp', '0.0') or 0.0),
+                        ptr=safe_float(row.get('ptr', '0.0') or 0.0),
                         amount=amount,
                         gst=gst_percent,
-                        netvalue=calculate_net_value(amount, gst_percent)
+                        netvalue=calculate_net_value(amount, gst_percent),
+                        formula=formula
                     )
                     db.session.add(new_med)
                     imported_count += 1
@@ -495,82 +785,6 @@ def import_medicines_csv():
         db.session.rollback()
         return jsonify({"error": f"An error occurred during import: {str(e)}"}), 500
 
-@app.route("/api/billing", methods=["POST"])
-@login_required
-def create_bill():
-    data = request.get_json()
-    customer_info = data.get('customer')
-    items = data.get('items')
-    payment_mode = data.get('paymentMode', 'Cash')
-
-    if not all([customer_info, items]):
-        return jsonify({"error": "Missing customer information or items"}), 400
-
-    try:
-        grand_total = 0
-        invoice_items = []
-
-        for item in items:
-            if not item.get('isManual', False):
-                medicine = Medicine.query.get(item['id'])
-                if not medicine or medicine.quantity < int(item['quantity']):
-                    return jsonify({"error": f"Not enough stock for {item['name']}"}), 400
-                medicine.quantity -= int(item['quantity'])
-            else:
-                if item.get('saveToInventory', False):
-                    if not Medicine.query.filter_by(name=item['name']).first():
-                        placeholder_med = Medicine(name=item['name'], mrp=float(item['mrp']), quantity=0)
-                        db.session.add(placeholder_med)
-            
-            amount = int(item['quantity']) * float(item['mrp'])
-            discount = float(item.get('discount', 0))
-            discounted_amount = amount * (1 - discount / 100)
-            grand_total += discounted_amount
-            
-            invoice_items.append(CustomerInvoiceItem(
-                medicine_name=item['name'],
-                quantity=int(item['quantity']),
-                mrp=float(item['mrp']),
-                discount_percent=discount,
-                total_price=discounted_amount
-            ))
-
-        new_invoice = CustomerInvoice(
-            customer_name=customer_info.get('name', 'N/A'), 
-            customer_phone=customer_info.get('phone', 'N/A'), 
-            grand_total=grand_total,
-            items=invoice_items,
-            payment_mode=payment_mode
-        )
-        db.session.add(new_invoice)
-        db.session.flush()
-
-        today = datetime.now().date()
-        for item in items:
-            reminder_days_str = item.get('reminder_days')
-            if reminder_days_str:
-                try:
-                    reminder_days = int(reminder_days_str)
-                    if reminder_days > 0:
-                        reminder_date = today + timedelta(days=reminder_days)
-                        new_reminder = Reminder(
-                            customer_name=customer_info.get('name', 'N/A'),
-                            customer_phone=customer_info.get('phone', 'N/A'),
-                            medicine_name=item['name'],
-                            reminder_date=reminder_date,
-                            invoice_id=new_invoice.id
-                        )
-                        db.session.add(new_reminder)
-                except (ValueError, TypeError):
-                    pass
-        
-        db.session.commit()
-        return jsonify({"message": "Bill created successfully", "invoiceId": new_invoice.id}), 201
-
-    except Exception as e:
-        db.session.rollback()
-        print(f"Error creating bill: {e}") 
-        return jsonify({"error": "An internal server error occurred."}), 500
 
 # --- ADD THESE NEW ROUTES for the Alerts page ---
 @app.route("/api/reminders", methods=["GET"])
@@ -663,6 +877,93 @@ def get_customer_history(phone):
     } for inv in invoices]
     return jsonify(history)
 
+@app.route("/api/customer-history-by-phone/<string:phone>")
+@login_required
+def get_customer_history_by_phone(phone):
+    """Gets purchase count and bill details for a specific phone number."""
+    
+    # --- DEBUGGING STEP ---
+    # This will print the exact phone number the server receives to your terminal.
+    print(f"Searching for customer history with phone number: '{phone}'")
+
+    # --- MORE ROBUST QUERY ---
+    # We now trim any potential whitespace from the database column for a better match.
+    invoices = CustomerInvoice.query.filter(func.trim(CustomerInvoice.customer_phone) == phone).order_by(CustomerInvoice.bill_date.desc()).all()
+    
+    if not invoices:
+        # If no invoices are found, return a clear "not found" response.
+        return jsonify({"customer_name": "", "bill_count": 0, "bills": []})
+
+    # Get the name from the most recent invoice
+    customer_name = invoices[0].customer_name
+    bill_count = len(invoices)
+    
+    bill_list = [{
+        'id': inv.id,
+        'bill_date': inv.bill_date.strftime('%Y-%m-%d %H:%M'),
+        'grand_total': inv.grand_total,
+        'items': [{'medicine_name': item.medicine_name, 'quantity': item.quantity} for item in inv.items]
+    } for inv in invoices]
+        
+    return jsonify({
+        "customer_name": customer_name,
+        "bill_count": bill_count,
+        "bills": bill_list
+    })
+
+
+# --- ADD this to your imports at the top of the file ---
+from collections import defaultdict
+
+from sqlalchemy import case # <-- Make sure this is imported at the top of your file
+@app.route("/api/daily-sales-summary")
+@login_required
+def get_daily_sales_summary():
+    """Groups all invoices by date and calculates daily totals and profits."""
+    
+    # This query now has the correct indentation
+    sales_by_day = db.session.query(
+        func.date(CustomerInvoice.bill_date).label('sale_date'),
+        func.count(CustomerInvoice.id).label('bill_count'),
+        func.sum(CustomerInvoice.grand_total).label('total_sales'),
+        func.sum(
+            ((CustomerInvoiceItem.mrp * (1 - CustomerInvoiceItem.discount_percent / 100)) - (Medicine.ptr * (1 + Medicine.gst / 100))) * CustomerInvoiceItem.quantity
+        ).label('total_profit')
+    ).select_from(CustomerInvoice)\
+     .join(CustomerInvoiceItem, CustomerInvoice.id == CustomerInvoiceItem.invoice_id)\
+     .join(Medicine, CustomerInvoiceItem.medicine_name == Medicine.name)\
+     .filter(Medicine.ptr > 0)\
+     .group_by(func.date(CustomerInvoice.bill_date))\
+     .order_by(func.date(CustomerInvoice.bill_date).desc())\
+     .all()
+
+    summary = [{'date': sale.sale_date, 'bill_count': sale.bill_count, 'total_sales': float(sale.total_sales or 0), 'total_profit': float(sale.total_profit or 0)} for sale in sales_by_day]
+    
+    return jsonify(summary)
+
+
+@app.route("/api/daily-sales/<string:date_str>")
+@login_required
+def get_daily_sales_for_date(date_str):
+    """Gets all individual invoices for a specific date."""
+    try:
+        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
+
+    invoices = CustomerInvoice.query.filter(func.date(CustomerInvoice.bill_date) == target_date).order_by(CustomerInvoice.bill_date.desc()).all()
+
+    bill_list = [{
+        'id': inv.id,
+        'customer_name': inv.customer_name,
+        'grand_total': inv.grand_total,
+        'items': [{
+            'medicine_name': item.medicine_name, 
+            'quantity': item.quantity, 
+        } for item in inv.items]
+    } for inv in invoices]
+
+    return jsonify(bill_list)
 
 # --- NEW --- Advance Payment Endpoints ---
 @app.route("/api/advances", methods=["GET", "POST"])
@@ -725,23 +1026,34 @@ def delete_purchase_invoice(inv_id):
     return jsonify({"message": "Purchase invoice deleted"}), 200
 
 
-# --- DASHBOARD & STATS ROUTES ---
 @app.route("/api/dashboard-stats")
 @login_required
 def dashboard_stats():
     today = datetime.now().date()
     thirty_days_ago = today - timedelta(days=30)
     
-    # Perform all stats queries
+    # --- THIS IS THE FIX: Use a CASE statement for the profit query ---
+    profit_today_query = db.session.query(
+        func.sum(
+            ((CustomerInvoiceItem.mrp * (1 - CustomerInvoiceItem.discount_percent / 100)) - (Medicine.ptr * (1 + Medicine.gst / 100))) * CustomerInvoiceItem.quantity
+        )
+    ).join(CustomerInvoice, CustomerInvoice.id == CustomerInvoiceItem.invoice_id)\
+     .join(Medicine, CustomerInvoiceItem.medicine_name == Medicine.name)\
+     .filter(func.date(CustomerInvoice.bill_date) == today)\
+     .filter(Medicine.ptr > 0)\
+     .scalar() or 0
+
+    profit_today = float(profit_today_query)
+
+    # The rest of the function remains the same...
     total_medicines_count = db.session.query(func.count(Medicine.id)).scalar()
     low_stock_count = Medicine.query.filter(Medicine.quantity < 3).count()
     expired_count = Medicine.query.filter(Medicine.expiry_date < today).count()
     expiring_soon_count = Medicine.query.filter(Medicine.expiry_date.between(today, today + timedelta(days=60))).count()
-    pending_advances_count = AdvancePayment.query.filter_by(is_delivered=False).count()
-    shortage_count = Shortage.query.filter_by(status='Pending').count() # <-- ADD THIS LINE
+    pending_reminders = Reminder.query.filter_by(status='Pending').count()
+    shortage_count = Shortage.query.filter_by(status='Pending').count()
     sales_today = db.session.query(func.sum(CustomerInvoice.grand_total)).filter(func.date(CustomerInvoice.bill_date) == today).scalar() or 0
     
-
     sales_data = (db.session.query(
         func.date(CustomerInvoice.bill_date), func.sum(CustomerInvoice.grand_total)
     ).filter(
@@ -754,19 +1066,76 @@ def dashboard_stats():
 
     sales_chart = [{'date': dt.strftime('%b %d'), 'sales': float(total)} for dt_str, total in sales_data for dt in [datetime.strptime(dt_str, '%Y-%m-%d')]]
     
-    # --- INSIDE the dashboard_stats function ---
-
     stats = {
-    "totalMedicines": total_medicines_count,
-    "lowStockCount": low_stock_count,
-    "expiredCount": expired_count,
-    "expiringSoonCount": expiring_soon_count,
-    "salesToday": sales_today,
-    "salesChart": sales_chart,  # <-- THE MISSING COMMA WAS HERE
-    "pendingAdvances": pending_advances_count,
-    "shortageCount": shortage_count # 
+        "totalMedicines": total_medicines_count,
+        "lowStockCount": low_stock_count,
+        "expiredCount": expired_count,
+        "expiringSoonCount": expiring_soon_count,
+        "salesToday": sales_today,
+        "salesChart": sales_chart,
+        "pendingReminders": pending_reminders,
+        "shortageCount": shortage_count,
+        "profitToday": profit_today
     }
     return jsonify(stats)
+
+@app.route("/api/profit-today-details")
+@login_required
+def get_profit_today_details():
+    """
+    Gets a detailed breakdown of items sold today, correctly accounting for discounts
+    and only calculating profit for items with a valid purchase price (PTR > 0).
+    """
+    today = datetime.now().date()
+    
+    # Fetch all individual items sold today, joining with their master medicine record
+    items_sold = db.session.query(
+        CustomerInvoiceItem, Medicine
+    ).join(CustomerInvoice, CustomerInvoice.id == CustomerInvoiceItem.invoice_id)\
+     .join(Medicine, CustomerInvoiceItem.medicine_name == Medicine.name)\
+     .filter(func.date(CustomerInvoice.bill_date) == today)\
+     .all()
+
+    # Aggregate the results in Python to handle multiple sales of the same item correctly
+    profit_details_agg = {}
+    for sale_item, medicine_record in items_sold:
+        name = sale_item.medicine_name
+        
+        # If we haven't seen this medicine yet, initialize it in our dictionary
+        if name not in profit_details_agg:
+            profit_details_agg[name] = {
+                'medicine_name': name,
+                'quantity_sold': 0,
+                'mrp': medicine_record.mrp,
+                'cost_price': 0, # Default to 0
+                'total_profit': 0
+            }
+        
+        # --- THIS IS THE CORRECTED LOGIC ---
+        # Only calculate profit if the PTR is valid (greater than 0)
+        profit_for_this_sale = 0
+        cost_price = 0
+        if medicine_record and medicine_record.ptr and medicine_record.ptr > 0:
+            cost_price = medicine_record.ptr * (1 + (medicine_record.gst or 0) / 100)
+            sale_price_after_discount = sale_item.mrp * (1 - (sale_item.discount_percent or 0) / 100)
+            profit_for_this_sale = (sale_price_after_discount - cost_price) * sale_item.quantity
+
+        # Add the results to our aggregate dictionary
+        profit_details_agg[name]['quantity_sold'] += sale_item.quantity
+        profit_details_agg[name]['total_profit'] += profit_for_this_sale
+        profit_details_agg[name]['cost_price'] = cost_price # Store the calculated cost price
+
+    details = list(profit_details_agg.values())
+    
+    # Calculate the 'profit_per_item' for display purposes
+    for item in details:
+        if item['quantity_sold'] > 0 and item['total_profit'] != 0:
+            item['profit_per_item'] = item['total_profit'] / item['quantity_sold']
+        else:
+            item['profit_per_item'] = 0
+            
+    return jsonify(details)
+
 
 # --- PUBLIC BILL VIEW ---
 @app.route("/bill/view/<int:invoice_id>")

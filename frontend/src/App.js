@@ -4,7 +4,7 @@ import { QrCode, MessageSquare } from 'lucide-react'; // --- NEW: Import Icons
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Pill, LayoutDashboard, Package, LogOut, AlertTriangle, PlusCircle, Trash2, Edit, X, Search, FileText, ClipboardX, Store ,Receipt, History, MinusCircle, DollarSign, Upload, Building, BrainCircuit, Sparkles,ClipboardList, Wallet, ArrowLeft,BellRing, HeartPulse, Baby, ShieldCheck, Bone, Sun, Wind } from 'lucide-react';
+import { Pill, LayoutDashboard, Package, LogOut, AlertTriangle, PlusCircle, Trash2, Edit, X, CalendarDays, Search, FileText, ClipboardX, Download, TrendingUp, Store ,Receipt, History, MinusCircle, DollarSign, Upload, Building, BrainCircuit, Sparkles,ClipboardList, Wallet, ArrowLeft,BellRing, HeartPulse, Baby, ShieldCheck, Bone, Sun, Wind } from 'lucide-react';
 
 // --- Axios Configuration ---
 const api = axios.create({ baseURL: 'http://localhost:5001/api', withCredentials: true });
@@ -69,6 +69,13 @@ export default function App() {
 
     return (
         <>
+
+        <GlobalStyles />
+
+            <Modal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} size="sm">
+                <AuthScreen onLoginSuccess={handleLoginSuccess} />
+            </Modal>
+
             <Modal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} size="sm">
                 <AuthScreen onLoginSuccess={handleLoginSuccess} />
             </Modal>
@@ -161,21 +168,53 @@ const CustomerStore = ({ user, onLogout, onLoginRequest }) => {
     });
     const [activePage, setActivePage] = useState('store'); 
     const [isLoading, setIsLoading] = useState(true);
+    const [selectedCategory, setSelectedCategory] = useState(null);
+    const [selectedMedicine, setSelectedMedicine] = useState(null);
+    const [isDetailLoading, setIsDetailLoading] = useState(false);
 
-    // --- DATA FETCHING & PERSISTENCE ---
+    // --- CORRECTED DATA FETCHING LOGIC ---
     useEffect(() => {
         setIsLoading(true);
+        let apiUrl = '/medicines?'; // Start with the base URL
+
+        // If a category is selected, use it for the API call.
+        // Otherwise, if a search term is present, use that.
+        if (selectedCategory) {
+            apiUrl += `category=${encodeURIComponent(selectedCategory)}`;
+        } else if (searchTerm) {
+            apiUrl += `q=${encodeURIComponent(searchTerm)}`;
+        }
+
+        // Use a timer to prevent too many API calls while typing
         const timer = setTimeout(() => {
-            api.get(`/medicines?q=${searchTerm}`)
+            api.get(apiUrl)
                 .then(res => setMedicines(res.data))
                 .finally(() => setIsLoading(false));
         }, 300);
+        
         return () => clearTimeout(timer);
-    }, [searchTerm]);
+    }, [searchTerm, selectedCategory]); // This now runs when EITHER searchTerm OR selectedCategory changes
 
     useEffect(() => {
         localStorage.setItem('curepharma_cart', JSON.stringify(cart));
     }, [cart]);
+
+     const handleProductSelect = (medicineId) => {
+        setIsDetailLoading(true);
+        setActivePage('productDetail'); // Switch the view
+        api.get(`/medicines/${medicineId}`)
+            .then(res => {
+                setSelectedMedicine(res.data);
+            })
+            .catch(err => {
+                console.error("Failed to fetch medicine details:", err);
+                // If it fails, go back to the store to avoid a blank page
+                setActivePage('store');
+            })
+            .finally(() => {
+                setIsDetailLoading(false);
+            });
+    };
 
     // --- CART LOGIC ---
     const addToCart = (medicine) => {
@@ -198,57 +237,118 @@ const CustomerStore = ({ user, onLogout, onLoginRequest }) => {
     };
     const cartItemCount = cart.reduce((acc, item) => acc + item.quantity, 0);
     const cartTotal = cart.reduce((acc, item) => acc + (item.mrp * item.quantity), 0);
+    
+    const handleCategorySelect = (category) => {
+        setSearchTerm(''); // Clear any search term
+        setSelectedCategory(category);
+    };
+
+    const handleProceedToCheckout = () => {
+        if (user) {
+            // If the user is logged in, go to the checkout page as normal.
+            setActivePage('checkout');
+        } else {
+            // If the user is a guest, call the onLoginRequest function
+            // which opens the login modal.
+            onLoginRequest();
+        }
+    };
 
     // --- RENDER LOGIC ---
     const renderContent = () => {
         switch (activePage) {
-            case 'cart': return <CartView cart={cart} updateCartQuantity={updateCartQuantity} cartTotal={cartTotal} onCheckout={() => setActivePage('checkout')} onContinueShopping={() => setActivePage('store')} />;
+            // Inside the renderContent function in CustomerStore
+case 'cart': 
+    return <CartView 
+                cart={cart} 
+                updateCartQuantity={updateCartQuantity} 
+                cartTotal={cartTotal} 
+                onCheckout={handleProceedToCheckout} // <-- CORRECT WAY
+                onContinueShopping={() => setActivePage('store')} 
+           />;
             case 'checkout': return <CheckoutView cart={cart} cartTotal={cartTotal} user={user} onOrderPlaced={() => { setCart([]); setActivePage('orderHistory'); }} />;
             case 'orderHistory': return <OrderHistoryView onBackToStore={() => setActivePage('store')} />;
-            default: return <StoreView medicines={medicines} onAddToCart={addToCart} isLoading={isLoading} />;
+             case 'productDetail':
+                if (isDetailLoading || !selectedMedicine) {
+                    return <div className="text-center p-12">Loading medicine details...</div>;
+                }
+                return <ProductDetailView 
+                            medicine={selectedMedicine} 
+                            onAddToCart={addToCart} 
+                            onBackToStore={() => setActivePage('store')} 
+                       />;
+            default: return <StoreView 
+                medicines={medicines} 
+                onAddToCart={addToCart} 
+                isLoading={isLoading} 
+                onCategorySelect={handleCategorySelect} 
+                selectedCategory={selectedCategory} 
+                clearCategory={() => setSelectedCategory(null)} 
+                onProductSelect={handleProductSelect} 
+            />;
         }
     };
 
     return (
-        <div className="bg-slate-50 min-h-screen font-sans">
-           <header className="bg-white sticky top-0 z-20 shadow-md">
-                {/* Top Bar */}
+        <div className="md:pl-20 bg-slate-50 min-h-screen font-sans">
+            <header className="bg-white sticky top-0 z-20 shadow-md">
                 <div className="bg-slate-100 py-2 border-b">
                     <div className="container mx-auto px-6 flex justify-between items-center text-sm text-slate-600">
                         <span>Your Trusted Online Pharmacy</span>
-                        {/* --- THIS PART IS NOW CONDITIONAL --- */}
                         {user ? (
                             <div className="flex items-center space-x-4">
                                 <span>Welcome, {user.name}</span>
                                 <button onClick={onLogout} className="text-slate-500 hover:text-red-600 transition-colors font-semibold">Logout</button>
                             </div>
                         ) : (
-                            <button onClick={onLoginRequest} className="font-semibold text-blue-600 hover:underline">
-                                Login / Sign Up
-                            </button>
+                            <button onClick={onLoginRequest} className="font-semibold text-blue-600 hover:underline">Login / Sign Up</button>
                         )}
                     </div>
                 </div>
-                {/* Main Header */}
+                {/* --- Stretched Vertical Branding (Now a Button) --- */}
+            <button 
+                onClick={() => { setActivePage('store'); setSelectedCategory(null); setSearchTerm(''); }}
+                className="fixed left-0 top-0 h-full w-20 hidden md:flex flex-col items-center justify-center z-30 group"
+            >
+                <span 
+                    className="text-6xl font-black text-gray-200 group-hover:text-blue-500 transition-colors duration-500 cursor-pointer" 
+                    style={{ 
+                        writingMode: 'vertical-rl', 
+                        transform: 'rotate(180deg)',
+                        letterSpacing: '0.3em',
+                        paddingTop: '2rem',
+                        paddingBottom: '2rem'
+                    }}
+                >
+                    CUREPHARMA
+                </span>
+            </button>
+
                 <div className="container mx-auto px-6 py-4 flex justify-between items-center">
-                    <button onClick={() => setActivePage('store')} className="flex items-center space-x-2">
+                    <button onClick={() => { setActivePage('store'); setSelectedCategory(null); setSearchTerm(''); }} className="flex items-center space-x-2">
                         <Pill className="h-10 w-10 text-blue-600" />
-                        <span className="text-3xl font-bold"><span className="text-red-600">Cure</span><span className="text-blue-600">Pharma</span></span>
+                        <span className="text-3xl font-bold">
+                            <span className="text-red-600">Cure</span><span className="text-blue-600">Pharma</span>
+                        </span>
                     </button>
                     <div className="hidden lg:flex flex-grow max-w-xl mx-8 relative">
-                        <Input type="text" placeholder="Search for Medicines, Health Products..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setActivePage('store'); }} className="w-full !p-3 !pl-12 !bg-slate-100 !shadow-inner !rounded-full"/>
+                        <Input type="text" placeholder="Search for Medicines, Health Products..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setSelectedCategory(null); setActivePage('store'); }} className="w-full !p-3 !pl-12 !bg-slate-100 !shadow-inner !rounded-full"/>
                         <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                     </div>
                     <div className="flex items-center space-x-4">
-                        {/* --- My Orders is now conditional --- */}
-                        {user && (
+                        <button onClick={() => setActivePage('store')} 
+                className="flex items-center space-x-2 text-slate-600 hover:text-blue-600 transition-colors"
+            >
+                <Store size={20} /> 
+                <span className="hidden md:block font-semibold">Home</span>
+            </button>
                             <button onClick={() => setActivePage('orderHistory')} className="flex items-center space-x-2 text-slate-600 hover:text-blue-600 transition-colors">
-                                <History size={28} />
+                                <History size={20} />
                                 <span className="hidden md:block font-semibold">My Orders</span>
                             </button>
-                        )}
+                        
                         <button onClick={() => setActivePage('cart')} className="relative flex items-center space-x-2 text-slate-600 hover:text-blue-600 transition-colors">
-                            <Package size={28} />
+                            <Package size={20} />
                             <span className="hidden md:block font-semibold">Cart</span>
                             {cartItemCount > 0 && (
                                 <span className="absolute -top-2 -right-2 bg-red-600 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center border-2 border-white font-bold">
@@ -259,6 +359,7 @@ const CustomerStore = ({ user, onLogout, onLoginRequest }) => {
                     </div>
                 </div>
             </header>
+
             <main className="container mx-auto px-6 py-8">
                  <AnimatePresence mode="wait">
                     <motion.div
@@ -285,9 +386,8 @@ const CustomerStore = ({ user, onLogout, onLoginRequest }) => {
 
 // --- SUB-COMPONENTS for the new design ---
 
-const StoreView = ({ medicines, onAddToCart, isLoading }) => (
+const StoreView = ({ medicines, onAddToCart, isLoading, onCategorySelect, selectedCategory, clearCategory, onProductSelect }) => (
     <>
-        {/* --- Hero Banner --- */}
         <div className="mb-12 grid grid-cols-1 lg:grid-cols-5 gap-6 items-center">
             <motion.div 
                 initial={{ opacity: 0, x: -50 }} 
@@ -296,7 +396,6 @@ const StoreView = ({ medicines, onAddToCart, isLoading }) => (
                 className="lg:col-span-3 bg-gradient-to-br from-red-600 to-red-800 p-10 rounded-3xl shadow-2xl text-white"
             >
                 <h1 className="text-5xl font-black tracking-tight">UP TO 20% OFF</h1>
-                {/* --- TEXT CORRECTED --- */}
                 <p className="mt-2 text-2xl font-semibold text-red-100">On All CurePharma Products</p>
                 <p className="mt-4 text-red-200">Unlock exclusive savings on our in-house brands and prioritize your health.</p>
                 <Button className="mt-6 !bg-white !text-red-600 !font-bold hover:!bg-red-100">Explore Deals</Button>
@@ -314,47 +413,141 @@ const StoreView = ({ medicines, onAddToCart, isLoading }) => (
             </motion.div>
         </div>
 
-        {/* --- The rest of the StoreView component remains the same --- */}
         <div className="mb-12">
             <h2 className="text-3xl font-bold text-gray-800 mb-6">Shop by Category</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-                <CategoryCard icon={HeartPulse} label="Cardiac Care" />
-                <CategoryCard icon={Baby} label="Baby Care" />
-                <CategoryCard icon={ShieldCheck} label="Immunity" />
-                <CategoryCard icon={Bone} label="Ortho Care" />
-                <CategoryCard icon={Sun} label="Skin Care" />
-                <CategoryCard icon={Wind} label="Respiratory" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4">
+                <CategoryCard icon={Pill} label="General" onSelect={onCategorySelect} />
+                <CategoryCard icon={HeartPulse} label="Cardiac Care" onSelect={onCategorySelect} />
+                <CategoryCard icon={Baby} label="Baby Care" onSelect={onCategorySelect} />
+                <CategoryCard icon={ShieldCheck} label="Immunity" onSelect={onCategorySelect} />
+                <CategoryCard icon={Bone} label="Ortho Care" onSelect={onCategorySelect} />
+                <CategoryCard icon={Sun} label="Skin Care" onSelect={onCategorySelect} />
+                <CategoryCard icon={Wind} label="Respiratory" onSelect={onCategorySelect} />
             </div>
         </div>
-        <h2 className="text-3xl font-bold text-gray-800 mb-6">Featured Products</h2>
+
+        <div className="flex justify-between items-center mb-6">
+            <h2 className="text-3xl font-bold text-gray-800">
+                {selectedCategory ? `Results for "${selectedCategory}"` : 'Featured Products'}
+            </h2>
+            {selectedCategory && (
+                <Button variant="secondary" onClick={clearCategory}>Clear Filter</Button>
+            )}
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
             {isLoading ? (
                 Array.from({ length: 8 }).map((_, i) => <ProductSkeleton key={i} />)
-            ) : (
+            ) : medicines.length > 0 ? (
                 medicines.map(med => (
-                    <ProductCard key={med.id} med={med} onAddToCart={onAddToCart} />
+                    // This now correctly passes the onProductSelect function
+                    <ProductCard key={med.id} med={med} onAddToCart={onAddToCart} onProductSelect={onProductSelect} />
                 ))
+            ) : (
+                <div className="col-span-full text-center py-16 bg-white rounded-2xl shadow-lg">
+                    <ClipboardX size={56} className="mx-auto text-gray-300 mb-4"/>
+                    <h2 className="text-2xl font-semibold text-gray-700">No Products Found</h2>
+                    {selectedCategory && (
+                        <p className="text-gray-500 mt-2">
+                            There are currently no products listed in the "{selectedCategory}" category.
+                        </p>
+                    )}
+                </div>
             )}
         </div>
     </>
 );
-const CategoryCard = ({ icon: Icon, label }) => (
+
+
+const ProductDetailView = ({ medicine, onAddToCart, onBackToStore }) => (
+    <div className="bg-white p-6 md:p-10 rounded-2xl shadow-xl max-w-4xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+            {/* Image Placeholder */}
+            <div className="bg-gray-100 rounded-xl h-80 flex items-center justify-center">
+                <Package size={80} className="text-gray-300" />
+            </div>
+
+            {/* Medicine Details */}
+            <div>
+                <h1 className="text-4xl font-bold text-gray-900">{medicine.name}</h1>
+                {medicine.formula && (
+                    <p className="text-lg text-gray-500 mt-2">
+                        <span className="font-semibold">Formula:</span> {medicine.formula}
+                    </p>
+                )}
+                
+                <p className="text-5xl font-extrabold text-blue-600 my-6">
+                    ₹{medicine.mrp?.toFixed(2)}
+                </p>
+
+                <div className="text-sm text-gray-600 space-y-2">
+                    <p>
+                        <span className="font-semibold">Category:</span> {medicine.category || 'N/A'}
+                    </p>
+                    <p>
+                         <span className="font-semibold">Stock Status:</span> 
+                         {medicine.quantity > 0 ? 
+                            <span className="text-green-600 font-semibold"> Available</span> : 
+                            <span className="text-red-600 font-semibold"> Out of Stock</span>
+                         }
+                    </p>
+                </div>
+
+                <div className="mt-8 flex items-center space-x-4">
+                    <Button 
+                        onClick={() => onAddToCart(medicine)} 
+                        disabled={medicine.quantity === 0}
+                        className="!py-4 !px-8 !text-lg flex-grow"
+                    >
+                        <PlusCircle size={22} />
+                        <span>Add to Cart</span>
+                    </Button>
+                    <Button onClick={onBackToStore} variant="secondary" className="!py-4 !px-6">
+                        <ArrowLeft size={22} />
+                    </Button>
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
+const CategoryCard = ({ icon: Icon, label, onSelect }) => (
     <motion.div 
         whileHover={{ y: -5, boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)" }} 
         className="bg-white p-4 rounded-xl shadow-lg text-center cursor-pointer flex flex-col items-center justify-center h-32"
+        onClick={() => onSelect(label)}
     >
         <Icon className="h-12 w-12 text-blue-500 mb-2" />
         <span className="font-semibold text-gray-700">{label}</span>
     </motion.div>
 );
 
-const ProductCard = ({ med, onAddToCart }) => (
-    <motion.div className="bg-white rounded-2xl shadow-lg overflow-hidden group flex flex-col" whileHover={{ y: -10, boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)" }}>
-        <div className="h-48 bg-gray-100 flex items-center justify-center relative"><Package size={48} className="text-gray-300 group-hover:text-blue-500 transition-colors duration-300" /></div>
-        <div className="p-6 flex flex-col flex-grow">
-            <h3 className="text-lg font-bold text-gray-800 truncate">{med.name}</h3>
-            <p className="text-3xl font-black bg-gradient-to-r from-slate-800 to-slate-600 text-transparent bg-clip-text mt-2">₹{med.mrp?.toFixed(2)}</p>
-            <Button onClick={() => onAddToCart(med)} className="w-full mt-auto bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all duration-300 !font-bold !py-3 !rounded-xl">
+const ProductCard = ({ med, onAddToCart, onProductSelect }) => (
+    <motion.div 
+        className="bg-white rounded-2xl shadow-lg overflow-hidden group flex flex-col" 
+        whileHover={{ y: -10, boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)" }}
+    >
+        {/* The main card is now a button for navigation */}
+        <button onClick={() => onProductSelect(med.id)} className="text-left w-full h-full flex flex-col">
+            <div className="h-48 bg-gray-100 flex items-center justify-center relative">
+                <Package size={48} className="text-gray-300 group-hover:text-blue-500 transition-colors duration-300" />
+            </div>
+            <div className="p-6 flex flex-col flex-grow">
+                <h3 className="text-lg font-bold text-gray-800 truncate">{med.name}</h3>
+                <p className="text-3xl font-black bg-gradient-to-r from-slate-800 to-slate-600 text-transparent bg-clip-text mt-2">
+                    ₹{med.mrp?.toFixed(2)}
+                </p>
+                <div className="mt-auto pt-4"> {/* Spacer */} </div>
+            </div>
+        </button>
+        {/* The Add to Cart button is separate to prevent navigation */}
+        <div className="p-6 pt-0">
+             <Button 
+                onClick={(e) => {
+                    e.stopPropagation(); // Prevents the card's click event from firing
+                    onAddToCart(med);
+                }} 
+                className="w-full bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all duration-300 !font-bold !py-3 !rounded-xl"
+            >
                 <PlusCircle size={20} /><span>Add to Cart</span>
             </Button>
         </div>
@@ -413,6 +606,11 @@ const OrderHistoryView = ({ onBackToStore }) => {
 
 const CheckoutView = ({ cart, cartTotal, user, onOrderPlaced }) => {
     const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+    if (!user || cart.length === 0) {
+        // You can optionally return a message, but returning null is clean.
+        // The main CustomerStore logic will prevent users from getting here anyway.
+        return null; 
+    }
     const handlePlaceOrder = async () => {
         setIsPlacingOrder(true);
         const customerDetails = { name: user.name, phone: user.phone };
@@ -440,109 +638,111 @@ const CheckoutView = ({ cart, cartTotal, user, onOrderPlaced }) => {
 };
 
 
-
-// --- Main Inventory System (with Animated Blue Sidebar) ---
 const InventorySystem = ({ user, onLogout }) => {
-    const [activeView, setActiveView] = useState('about');
+    const [activeView, setActiveView] = useState('dashboard');
     const [isSidebarExpanded, setIsSidebarExpanded] = useState(false); 
     const [billingCustomer, setBillingCustomer] = useState({ name: '', countryCode: '91', localPhone: '' });
     const [billingItems, setBillingItems] = useState([]);
-    // --- AND MODIFY THIS FUNCTION ---
+    const [editingBill, setEditingBill] = useState(null);
+
     const handleBillCreated = () => {
-        // Reset the state to its default values
         setBillingCustomer({ name: '', countryCode: '91', localPhone: '' });
         setBillingItems([]);
+        setEditingBill(null);
     };
 
-    // This function determines which page component to show
+    const handleEditBill = (bill) => {
+        setEditingBill(bill);
+        setActiveView('billing');
+    };
+
+    // Helper component for the sidebar navigation items
+    const NavItem = ({ icon: Icon, label, viewName }) => {
+        const isSalesView = activeView === 'sales';
+        const isActive = activeView === viewName;
+
+        const baseStyle = isSalesView ? 'text-gray-400 hover:bg-gray-700 hover:text-white' : 'text-blue-100 hover:bg-blue-700';
+        const activeStyle = isSalesView ? 'bg-gray-700 text-white shadow-inner' : 'bg-blue-700 text-white shadow-inner';
+
+        return (
+            <button
+                onClick={() => setActiveView(viewName)}
+                className={`flex items-center space-x-3 px-3 py-2 rounded-lg w-full text-left transition-colors duration-200 ${isActive ? activeStyle : baseStyle}`}
+            >
+                <Icon className="h-5 w-5 flex-shrink-0" />
+                <AnimatePresence>
+                    {isSidebarExpanded && (
+                        <motion.span 
+                            initial={{ opacity: 0, width: 0 }}
+                            animate={{ opacity: 1, width: 'auto' }}
+                            exit={{ opacity: 0, width: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="whitespace-nowrap"
+                        >
+                            {label}
+                        </motion.span>
+                    )}
+                </AnimatePresence>
+            </button>
+        );
+    };
+
+    const AboutView = () => {
+        const isSalesView = activeView === 'sales';
+        return (
+            <div className="flex items-center justify-center h-full">
+                <motion.div 
+                    className={`text-center p-12 rounded-xl shadow-lg border ${isSalesView ? 'bg-gray-900/50 border-gray-700' : 'bg-white border-gray-200'}`}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                >
+                    <Pill className={`mx-auto h-16 w-16 mb-4 ${isSalesView ? 'text-blue-400' : 'text-blue-600'}`} />
+                    <h1 className="text-5xl font-bold">
+                        <span className={isSalesView ? 'text-red-500' : 'text-red-600'}>Cure</span>
+                        <span className={isSalesView ? 'text-blue-400' : 'text-blue-600'}>Pharma X</span>
+                    </h1>
+                    <p className={`mt-2 text-lg ${isSalesView ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Next Generation Inventory Software
+                    </p>
+                </motion.div>
+            </div>
+        );
+    };
+
     const renderView = () => {
         switch (activeView) {
             case 'dashboard': return <Dashboard setActiveView={setActiveView} />;
-            case 'chatbot': return <ChatbotView />;
             case 'medicines': return <MedicinesView />;
+            case 'billing': return <BillingView customer={billingCustomer} setCustomer={setBillingCustomer} items={billingItems} setItems={setBillingItems} onBillCreated={handleBillCreated} editingBill={editingBill} />;
+            case 'sales': return <SalesView />;
             case 'alerts': return <AlertsView />;
-            case 'billing': return (
-    <BillingView 
-        customer={billingCustomer}
-        setCustomer={setBillingCustomer}
-        items={billingItems}
-        setItems={setBillingItems}
-        onBillCreated={handleBillCreated}
-    />
-);
-            case 'customer-bills': return <CustomerBillsView />;
+            case 'purchase-invoices': return <PurchaseInvoiceView />;
+            case 'customer-bills': return <CustomerBillsView onEditBill={handleEditBill} />;
             case 'advances': return <AdvancesView />;
             case 'shortages': return <ShortagesView />;
-            case 'purchase-invoices': return <PurchaseInvoiceView />;
             case 'customer-history': return <CustomerHistoryView />;
             case 'import': return <ImportView />;
-            case 'about': return <AboutView />; 
+            case 'about': return <AboutView />;
+            case 'daily-sales': return <DailySalesView />;
             default: return <Dashboard />;
         }
     };
-    
-
-    // --- NEW --- About View Component ---
-const AboutView = () => {
-    return (
-        <div className="flex items-center justify-center h-full">
-            <motion.div 
-                className="text-center p-12 bg-white rounded-xl shadow-lg border border-gray-200"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-            >
-                <Pill className="mx-auto h-16 w-16 text-blue-600 mb-4" />
-                <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-indigo-500 text-transparent bg-clip-text">
-                    CurePharma X
-                </h1>
-                <p className="mt-2 text-lg text-gray-500">
-                    Next Generation Inventory Software
-                </p>
-            </motion.div>
-        </div>
-    );
-};
-
-    // This is a sub-component for the navigation buttons in the sidebar
-    const NavItem = ({ icon: Icon, label, viewName, isExpanded }) => (
-        <button
-            onClick={() => setActiveView(viewName)}
-            className={`flex items-center space-x-3 px-3 py-2 rounded-lg w-full text-left transition-colors duration-700 ${
-                activeView === viewName 
-                ? 'bg-blue-700 text-white shadow-inner' // Style for the active button
-                : 'text-blue-100 hover:bg-blue-700' // Style for inactive buttons
-            }`}
-        >
-            <Icon className="h-5 w-5 flex-shrink-0" />
-            <AnimatePresence>
-                {isExpanded && (
-                    <motion.span 
-                        initial={{ opacity: 0, width: 0 }}
-                        animate={{ opacity: 1, width: 'auto' }}
-                        exit={{ opacity: 0, width: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="whitespace-nowrap"
-                    >
-                        {label}
-                    </motion.span>
-                )}
-            </AnimatePresence>
-        </button>
-    );
 
     return (
-        <div className="flex h-screen bg-gray-50 text-gray-800">
-            {/* --- The Animated Sidebar --- */}
+        <div className={`flex h-screen transition-colors duration-500 ease-in-out ${
+            activeView === 'sales' ? 'bg-black text-gray-300' : 'bg-gray-50 text-gray-800'
+        }`}>
             <motion.aside
-                className="bg-blue-600 p-4 flex flex-col shrink-0 shadow-lg"
+                className={`p-4 flex flex-col shrink-0 shadow-lg transition-colors duration-500 ease-in-out ${
+                    activeView === 'sales' ? 'bg-gray-900 border-r border-gray-800' : 'bg-blue-600'
+                }`}
                 onMouseEnter={() => setIsSidebarExpanded(true)}
                 onMouseLeave={() => setIsSidebarExpanded(false)}
-                animate={{ width: isSidebarExpanded ? '16rem' : '4.5rem' }} // Animates width
+                animate={{ width: isSidebarExpanded ? '16rem' : '4.5rem' }}
                 transition={{ type: 'spring', stiffness: 300, damping: 30 }}
             >
-                {/* Sidebar Header */}
-                <button onClick={() => setActiveView('about')} className="flex items-center space-x-2 mb-8 px-2 overflow-hidden text-left w-full">
+                <button onClick={() => setActiveView('about')} className="flex items-center space-x-2 mb-8 px-2 overflow-hidden text-left w-full flex-shrink-0">
                     <Pill className="h-8 w-8 text-white flex-shrink-0" />
                     <AnimatePresence>
                         {isSidebarExpanded && (
@@ -550,34 +750,36 @@ const AboutView = () => {
                                 initial={{ opacity: 0 }} 
                                 animate={{ opacity: 1 }} 
                                 exit={{ opacity: 0 }} 
-                                className="text-xl font-bold text-white whitespace-nowrap"
+                                className="text-xl font-bold whitespace-nowrap"
                             >
-                                CurePharma X
+                                <span className={activeView === 'sales' ? 'text-red-500' : 'text-red-400'}>Cure</span>
+                                <span className="text-white">Pharma X</span>
                             </motion.span>
                         )}
                     </AnimatePresence>
                 </button>
 
-                {/* Navigation Menu */}
-                <nav className="flex-grow space-y-1">
-                    <NavItem icon={LayoutDashboard} label="Dashboard" viewName="dashboard" isExpanded={isSidebarExpanded} />
-                    <NavItem icon={BrainCircuit} label="AI Helper" viewName="chatbot" isExpanded={isSidebarExpanded} />
-                    <NavItem icon={Package} label="Medicines" viewName="medicines" isExpanded={isSidebarExpanded} />
-                    <NavItem icon={Receipt} label="New Bill" viewName="billing" isExpanded={isSidebarExpanded} />
-                    <NavItem icon={Building} label="Agency Invoices" viewName="purchase-invoices" isExpanded={isSidebarExpanded} />
-                    <NavItem icon={ClipboardList} label="Customer Bills" viewName="customer-bills" isExpanded={isSidebarExpanded} />
-                    <NavItem icon={BellRing} label="Reminders" viewName="alerts" isExpanded={isSidebarExpanded} />
-                    <NavItem icon={Wallet} label="Advances" viewName="advances" isExpanded={isSidebarExpanded} />
-                    <NavItem icon={ClipboardX} label="Shortages" viewName="shortages" isExpanded={isSidebarExpanded} />
-                    <NavItem icon={History} label="Customer History" viewName="customer-history" isExpanded={isSidebarExpanded} />
-                    <NavItem icon={Upload} label="Import CSV" viewName="import" isExpanded={isSidebarExpanded} />
-                </nav>
+                <div className="flex-grow overflow-y-auto -mr-2 pr-2 custom-scrollbar">
+                    <nav className="space-y-1">
+                        <NavItem icon={LayoutDashboard} label="Dashboard" viewName="dashboard" />
+                        <NavItem icon={Package} label="Medicines" viewName="medicines" />
+                        <NavItem icon={Receipt} label="New Bill" viewName="billing" />
+                        <NavItem icon={CalendarDays} label="Daily Sales" viewName="daily-sales" />
+                        <NavItem icon={TrendingUp} label=" Advance Sales" viewName="sales" />
+                        <NavItem icon={BellRing} label="Reminders" viewName="alerts" />
+                        <NavItem icon={Building} label="Agency Invoices" viewName="purchase-invoices" />
+                        <NavItem icon={ClipboardList} label="Customer Bills" viewName="customer-bills" />
+                        <NavItem icon={Wallet} label="Advances" viewName="advances" />
+                        <NavItem icon={ClipboardX} label="Shortages" viewName="shortages" />
+                        <NavItem icon={History} label="Customer History" viewName="customer-history" />
+                        <NavItem icon={Upload} label="Import CSV" viewName="import" />
+                    </nav>
+                </div>
 
-                {/* Logout Button */}
-                <div className="mt-auto">
+                <div className={`flex-shrink-0 pt-4 mt-4 border-t transition-colors duration-500 ease-in-out ${activeView === 'sales' ? 'border-gray-700' : 'border-blue-500/50'}`}>
                     <button
                         onClick={onLogout}
-                        className="flex items-center space-x-3 px-3 py-2 rounded-lg w-full text-left text-blue-100 hover:bg-red-500 hover:text-white transition-colors duration-200"
+                        className={`flex items-center space-x-3 px-3 py-2 rounded-lg w-full text-left transition-colors duration-200 ${activeView === 'sales' ? 'text-gray-400 hover:bg-red-500/50 hover:text-white' : 'text-blue-100 hover:bg-red-500 hover:text-white'}`}
                     >
                         <LogOut className="h-5 w-5 flex-shrink-0" />
                         <AnimatePresence>
@@ -597,70 +799,127 @@ const AboutView = () => {
                 </div>
             </motion.aside>
 
-            {/* Main Content Area */}
-            <main className="flex-grow p-6 lg:p-8 overflow-y-auto">
+            <main className="flex-grow p-6 lg:p-8 overflow-y-auto custom-scrollbar">
                 {renderView()}
             </main>
         </div>
     );
 };
 
-// --- Medicines View (with Full Details) ---
+
+const NavItem = ({ icon: Icon, label, viewName, isExpanded, activeView, setActiveView }) => {
+    const isSalesView = activeView === 'sales';
+    const isActive = activeView === viewName;
+
+    // Define styles for both themes
+    const baseStyle = isSalesView ? 'text-gray-400 hover:bg-gray-700 hover:text-white' : 'text-blue-100 hover:bg-blue-700';
+    const activeStyle = isSalesView ? 'bg-gray-700 text-white shadow-inner' : 'bg-blue-700 text-white shadow-inner';
+
+    return (
+        <button
+            onClick={() => setActiveView(viewName)}
+            className={`flex items-center space-x-3 px-3 py-2 rounded-lg w-full text-left transition-colors duration-200 ${isActive ? activeStyle : baseStyle}`}
+        >
+            <Icon className="h-5 w-5 flex-shrink-0" />
+            <AnimatePresence>
+                {isExpanded && (
+                    <motion.span 
+                        initial={{ opacity: 0, width: 0 }}
+                        animate={{ opacity: 1, width: 'auto' }}
+                        exit={{ opacity: 0, width: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="whitespace-nowrap"
+                    >
+                        {label}
+                    </motion.span>
+                )}
+            </AnimatePresence>
+        </button>
+    );
+};
+
+
 const MedicinesView = () => {
     const [medicines, setMedicines] = useState([]);
     const [editingMedicine, setEditingMedicine] = useState(null);
     const [isFormModalOpen, setIsFormModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [searchBy, setSearchBy] = useState('name');
 
-    const fetchMedicines = useCallback(() => { api.get('/medicines').then(res => setMedicines(res.data)) }, []);
+    const fetchMedicines = useCallback(() => {
+        api.get(`/medicines?q=${searchTerm}&by=${searchBy}`)
+           .then(res => setMedicines(res.data));
+    }, [searchTerm, searchBy]);
+
     useEffect(fetchMedicines, [fetchMedicines]);
 
     const onSave = () => { fetchMedicines(); setIsFormModalOpen(false); };
     const onDelete = (id) => { if (window.confirm('Are you sure?')) { api.delete(`/medicines/${id}`).then(fetchMedicines); } };
-    
-    const filteredMedicines = medicines.filter(med => med.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
     return (
         <>
-            <Modal isOpen={isFormModalOpen} onClose={() => setIsFormModalOpen(false)} size="3xl"><MedicineForm medicine={editingMedicine} onSave={onSave} onCancel={() => setIsFormModalOpen(false)} /></Modal>
+            <Modal isOpen={isFormModalOpen} onClose={() => setIsFormModalOpen(false)} size="3xl">
+                <MedicineForm medicine={editingMedicine} onSave={onSave} onCancel={() => setIsFormModalOpen(false)} />
+            </Modal>
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-3xl font-bold">Medicines</h1>
-                <Button onClick={() => { setEditingMedicine(null); setIsFormModalOpen(true); }}><PlusCircle size={20} /><span>Add Medicine</span></Button>
+                <Button onClick={() => { setEditingMedicine(null); setIsFormModalOpen(true); }}>
+                    <PlusCircle size={20} /><span>Add Medicine</span>
+                </Button>
             </div>
-            <div className="mb-6 relative">
-                <Input type="text" placeholder="Search by name..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10"/>
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            
+            <div className="mb-6 flex gap-2">
+                <div className="relative flex-grow">
+                    <Input type="text" placeholder={`Search by ${searchBy}...`} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10"/>
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                </div>
+                <select value={searchBy} onChange={e => setSearchBy(e.target.value)} className="bg-gray-100 border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="name">Name</option>
+                    <option value="formula">Formula</option>
+                    <option value="batch_no">Batch #</option>
+                </select>
             </div>
+
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
                 <table className="w-full text-left text-sm">
-                    <thead className="bg-gray-50"><tr>
-                        <th className="p-3 font-semibold">S.No</th>
-                        <th className="p-3 font-semibold">Name</th>
-                        <th className="p-3 font-semibold">Batch #</th>
-                        <th className="p-3 font-semibold">Qty</th>
-                        <th className="p-3 font-semibold">Expiry</th>
-                        <th className="p-3 font-semibold">MRP</th>
-                        <th className="p-3 font-semibold">PTR</th>
-                        <th className="p-3 font-semibold">GST(%)</th>
-                        <th className="p-3 font-semibold text-right">Actions</th>
-                    </tr></thead>
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="p-3 font-semibold">S.No</th>
+                            <th className="p-3 font-semibold">Name</th>
+                            <th className="p-3 font-semibold">Formula</th>
+                            <th className="p-3 font-semibold">Batch #</th>
+                            <th className="p-3 font-semibold">Qty</th>
+                            <th className="p-3 font-semibold">MRP</th>
+                            <th className="p-3 font-semibold">PTR</th>
+                            <th className="p-3 font-semibold">GST(%)</th>
+                            <th className="p-3 font-semibold">Cost/Item</th>
+                            <th className="p-3 font-semibold">Profit/Item (₹)</th>
+                            <th className="p-3 font-semibold text-right">Actions</th>
+                        </tr>
+                    </thead>
                     <tbody>
-                        {filteredMedicines.map((med, index) => (
-                            <tr key={med.id} className="border-t">
-                                <td className="p-3 font-medium">{index + 1}</td>
-                                <td className="p-3 font-medium">{med.name}</td>
-                                <td className="p-3 text-gray-500">{med.batch_no}</td>
-                                <td className="p-3">{med.quantity}</td>
-                                <td className="p-3 text-gray-500">{med.expiry_date}</td>
-                                <td className="p-3">₹{med.mrp?.toFixed(2)}</td>
-                                <td className="p-3">₹{med.ptr?.toFixed(2)}</td>
-                                <td className="p-3">{med.gst}%</td>
-                                <td className="p-3 text-right space-x-2 flex items-center justify-end">
-                                    <button onClick={() => { setEditingMedicine(med); setIsFormModalOpen(true); }} className="p-2 text-gray-500 hover:text-blue-600"><Edit size={18} /></button>
-                                    <button onClick={() => onDelete(med.id)} className="p-2 text-gray-500 hover:text-red-600"><Trash2 size={18} /></button>
-                                </td>
-                            </tr>
-                        ))}
+                        {medicines.map((med, index) => {
+                            const costPerItem = (med.ptr && med.gst !== null) ? med.ptr * (1 + med.gst / 100) : 0;
+                            const profit = (med.mrp && costPerItem) ? med.mrp - costPerItem : 0;
+                            return (
+                                <tr key={med.id} className="border-t">
+                                    <td className="p-3 font-medium">{index + 1}</td>
+                                    <td className="p-3 font-medium">{med.name}</td>
+                                    <td className="p-3 text-gray-500">{med.formula}</td>
+                                    <td className="p-3 text-gray-500">{med.batch_no}</td>
+                                    <td className="p-3">{med.quantity}</td>
+                                    <td className="p-3">₹{med.mrp?.toFixed(2)}</td>
+                                    <td className="p-3 text-gray-500">₹{med.ptr?.toFixed(2)}</td>
+                                    <td className="p-3 text-gray-500">{med.gst}%</td>
+                                    <td className="p-3 text-gray-500">₹{med.amount?.toFixed(2)}</td>
+                                    <td className={`p-3 font-semibold ${profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>₹{profit.toFixed(2)}</td>
+                                    <td className="p-3 text-right space-x-2 flex items-center justify-end">
+                                        <button onClick={() => { setEditingMedicine(med); setIsFormModalOpen(true); }} className="p-2 text-gray-500 hover:text-blue-600"><Edit size={18} /></button>
+                                        <button onClick={() => onDelete(med.id)} className="p-2 text-gray-500 hover:text-red-600"><Trash2 size={18} /></button>
+                                    </td>
+                                </tr>
+                            )
+                        })}
                     </tbody>
                 </table>
             </div>
@@ -765,38 +1024,76 @@ const ChatbotView = () => {
 };
 
 const MedicineForm = ({ medicine, onSave, onCancel }) => {
-    const [formData, setFormData] = useState({ name: '', quantity: '', freeqty: '', batch_no: '', expiry_date: '', mrp: '', ptr: '', amount: '', gst: '' });
-    useEffect(() => { 
+    const [formData, setFormData] = useState({
+        name: '',
+        formula: '',
+        quantity: '',
+        freeqty: '',
+        batch_no: '',
+        expiry_date: '',
+        mrp: '',
+        ptr: '',
+        amount: '0.00',
+        gst: '',
+        image_url: '',
+        category: 'General'
+    });
+    const categories = ['General', 'Cardiac Care', 'Baby Care', 'Immunity', 'Ortho Care', 'Skin Care', 'Respiratory'];
+
+    const totalPurchaseValue = ((parseFloat(formData.amount) || 0) * (parseInt(formData.quantity) || 0)).toFixed(2);
+
+    useEffect(() => {
+        const ptr = parseFloat(formData.ptr) || 0;
+        const gst = parseFloat(formData.gst) || 0;
+        const perItemAmount = ptr * (1 + gst / 100);
+        setFormData(prevData => ({ ...prevData, amount: perItemAmount.toFixed(2) }));
+    }, [formData.ptr, formData.gst]);
+
+    useEffect(() => {
         if (medicine) {
-            // Ensure expiry_date is in YYYY-MM-DD format for the input
-            const formattedMedicine = { ...medicine, expiry_date: medicine.expiry_date ? medicine.expiry_date.split('T')[0] : '' };
+            const formattedMedicine = { ...medicine, expiry_date: medicine.expiry_date ? medicine.expiry_date.split('T')[0] : '', image_url: medicine.image_url || '', category: medicine.category || 'General', formula: medicine.formula || '' };
             setFormData(formattedMedicine);
         } else {
-            setFormData({ name: '', quantity: '', freeqty: '', batch_no: '', expiry_date: '', mrp: '', ptr: '', amount: '', gst: '' });
+            setFormData({ name: '', formula: '', quantity: '', freeqty: '', batch_no: '', expiry_date: '', mrp: '', ptr: '', amount: '0.00', gst: '', image_url: '', category: 'General' });
         }
     }, [medicine]);
 
     const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+
     const handleSubmit = async (e) => {
         e.preventDefault();
+        const payload = { ...formData };
+        delete payload.amount;
+
         const method = medicine ? 'put' : 'post';
         const url = medicine ? `/medicines/${medicine.id}` : '/medicines';
-        await api[method](url, formData);
+        await api[method](url, payload);
         onSave();
     };
+
     return (
         <form onSubmit={handleSubmit} className="p-6">
             <h2 className="text-xl font-bold mb-6">{medicine ? 'Edit Medicine' : 'Add New Medicine'}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <Input name="name" value={formData.name} onChange={handleChange} placeholder="Medicine Name" required className="lg:col-span-2" />
-                <Input name="batch_no" value={formData.batch_no} onChange={handleChange} placeholder="Batch #" />
+                <Input name="formula" value={formData.formula} onChange={handleChange} placeholder="Formula (e.g., Paracetamol)" />
                 <Input name="quantity" type="number" value={formData.quantity} onChange={handleChange} placeholder="Quantity" required />
-                <Input name="freeqty" type="number" value={formData.freeqty} onChange={handleChange} placeholder="Free Qty" />
-                <Input name="expiry_date" type="date" value={formData.expiry_date} onChange={handleChange} />
                 <Input name="mrp" type="number" step="0.01" value={formData.mrp} onChange={handleChange} placeholder="MRP (₹)" />
                 <Input name="ptr" type="number" step="0.01" value={formData.ptr} onChange={handleChange} placeholder="PTR (₹)" />
-                <Input name="amount" type="number" step="0.01" value={formData.amount} onChange={handleChange} placeholder="Amount (₹)" />
                 <Input name="gst" type="number" step="0.01" value={formData.gst} onChange={handleChange} placeholder="GST (%)" />
+                <div>
+                    <label className="text-sm font-medium text-gray-500">Cost Price / Item (₹)</label>
+                    <Input name="amount" type="number" value={formData.amount} readOnly className="bg-gray-200 text-gray-500" />
+                </div>
+                <div>
+                    <label className="text-sm font-medium text-gray-500">Total Purchase Value (₹)</label>
+                    <Input type="number" value={totalPurchaseValue} readOnly className="bg-gray-200 text-gray-500 font-bold" />
+                </div>
+                <select name="category" value={formData.category} onChange={handleChange} className="w-full bg-gray-100 border-gray-300 rounded-lg p-3">
+                    {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+                <Input name="batch_no" value={formData.batch_no} onChange={handleChange} placeholder="Batch #" />
+                <Input name="expiry_date" type="date" value={formData.expiry_date} onChange={handleChange} />
             </div>
             <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
                 <Button variant="secondary" onClick={onCancel}>Cancel</Button>
@@ -805,6 +1102,8 @@ const MedicineForm = ({ medicine, onSave, onCancel }) => {
         </form>
     );
 };
+
+
 
 // --- Import CSV View (with Full Details) ---
 const ImportView = () => {
@@ -824,30 +1123,92 @@ const ImportView = () => {
             <h1 className="text-3xl font-bold mb-6">Import Medicines from CSV</h1>
             <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 max-w-2xl">
                 <p className="mb-2">1. Your CSV file must have a header row.</p>
-                <p className="mb-4">2. Required headers: <code className="bg-gray-100 p-1 rounded">name,quantity,mrp</code>. Optional headers: <code className="bg-gray-100 p-1 rounded">freeqty,batch_no,expiry_date,ptr,amount,gst</code></p>
+                <p className="mb-4">2. Required headers: <code className="bg-gray-100 p-1 rounded">name,quantity,mrp</code>. Optional headers: <code className="bg-gray-100 p-1 rounded">freeqty,batch_no,expiry_date,ptr,amount,gst,formula</code></p>
                 <div className="flex gap-2"><Input type="file" accept=".csv" onChange={e => setFile(e.target.files[0])} /><Button onClick={handleUpload}><Upload size={18}/><span>Upload</span></Button></div>
                 {status.message && <p className={`mt-4 text-sm ${status.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{status.message}</p>}
             </div>
         </div>
     );
 };
-const BillingView = ({ customer, setCustomer, items, setItems, onBillCreated }) => {
-    const [medicines, setMedicines] = useState([]);
+const BillingView = ({ customer, setCustomer, items, setItems, onBillCreated, editingBill }) => {
+    // State for this component's own logic
     const [searchTerm, setSearchTerm] = useState('');
+    const [searchResults, setSearchResults] = useState([]); 
     const [manualItem, setManualItem] = useState({ name: '', mrp: '' });
     const [lastBill, setLastBill] = useState(null);
     const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
     const [saveToInventory, setSaveToInventory] = useState(true);
     const [paymentMode, setPaymentMode] = useState('Cash');
 
-    useEffect(() => { api.get('/medicines').then(res => setMedicines(res.data)) }, []);
+    // State for the Customer History feature
+    const [customerHistory, setCustomerHistory] = useState(null);
+    const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+    const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
+    // Dynamic search logic with debounce for the unified search bar
+    useEffect(() => {
+        if (searchTerm.trim().length < 2) {
+            setSearchResults([]);
+            return;
+        }
+        const debounceTimer = setTimeout(() => {
+            api.get(`/medicines?q=${searchTerm}`)
+                .then(res => setSearchResults(res.data))
+                .catch(err => console.error("Error fetching search results:", err));
+        }, 300);
+        return () => clearTimeout(debounceTimer);
+    }, [searchTerm]); // Only depends on the search term now
+
+    // Effect to fetch customer history
+    useEffect(() => {
+        if (customer.localPhone && customer.localPhone.length === 10) {
+            setIsHistoryLoading(true);
+            const fullPhoneNumber = customer.countryCode + customer.localPhone;
+            const handler = setTimeout(() => {
+                api.get(`/customer-history-by-phone/${fullPhoneNumber}`)
+                    .then(res => {
+                        setCustomerHistory(res.data);
+                        if (res.data.customer_name && !customer.name) {
+                            setCustomer(prev => ({ ...prev, name: res.data.customer_name }));
+                        }
+                    })
+                    .catch(() => setCustomerHistory({ bill_count: 0, bills: [] }))
+                    .finally(() => setIsHistoryLoading(false));
+            }, 500);
+            return () => clearTimeout(handler);
+        } else {
+            setCustomerHistory(null);
+        }
+    }, [customer.localPhone, customer.countryCode, customer.name, setCustomer]);
+
+    // Effect to populate the form when editing a bill
+    useEffect(() => {
+        if (editingBill) {
+            const phone = editingBill.customer_phone || '';
+            const countryCode = phone.startsWith('91') ? '91' : '91';
+            const localPhone = phone.replace(new RegExp(`^${countryCode}`), '');
+            setCustomer({ name: editingBill.customer_name, countryCode, localPhone });
+
+            const formattedItems = editingBill.items.map(item => ({
+                id: item.medicine_id || `manual-${item.medicine_name}`,
+                name: item.medicine_name,
+                quantity: item.quantity,
+                mrp: item.mrp,
+                discount: item.discount_percent,
+                ptr: item.ptr // Assuming ptr is available from the fetched bill item
+            }));
+            setItems(formattedItems);
+            setPaymentMode(editingBill.payment_mode || 'Cash');
+        }
+    }, [editingBill, setCustomer, setItems]);
+    
+    // --- Component Functions ---
     const addItem = (med) => {
         const existing = items.find(i => i.id === med.id);
         if (existing) {
             setItems(items.map(i => i.id === med.id ? { ...i, quantity: i.quantity + 1 } : i));
         } else {
-            setItems([...items, { ...med, quantity: 1, discount: 0, isManual: false }]);
+            setItems([...items, { ...med, quantity: 1, discount: 0, isManual: false, ptr: med.ptr }]);
         }
         setSearchTerm('');
     };
@@ -878,16 +1239,15 @@ const BillingView = ({ customer, setCustomer, items, setItems, onBillCreated }) 
             alert('Please fill customer details and add items.');
             return;
         }
+        const payload = { customer: { name: customer.name, phone: fullPhoneNumber }, items, paymentMode };
         try {
-            const response = await api.post('/billing', { 
-                customer: { name: customer.name, phone: fullPhoneNumber }, 
-                items, 
-                paymentMode 
-            });
+            const response = editingBill 
+                ? await api.put(`/customer-bills/${editingBill.id}`, payload)
+                : await api.post('/billing', payload);
             setLastBill({ ...response.data, customer: { name: customer.name, phone: fullPhoneNumber }, items, grandTotal });
             setIsSuccessModalOpen(true);
         } catch (error) { 
-            alert(`Error: ${error.response?.data?.error || 'Could not create bill.'}`); 
+            alert(`Error: ${error.response?.data?.error || 'Could not save bill.'}`); 
         }
     };
     
@@ -895,53 +1255,92 @@ const BillingView = ({ customer, setCustomer, items, setItems, onBillCreated }) 
         setIsSuccessModalOpen(false);
         onBillCreated();
     };
-
-    const searchResults = searchTerm ? medicines.filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 5) : [];
-
+    
     return (
         <>
             <Modal isOpen={isSuccessModalOpen} onClose={handleModalClose} size="md">
                 {lastBill && (
                     <div className="p-6 text-center">
                         <h2 className="text-2xl font-bold text-green-600 mb-4">Bill Saved Successfully!</h2>
-                        <p className="text-gray-600 mb-4">Show the QR code to the customer or send the bill via WhatsApp.</p>
                         <div className="p-4 bg-gray-100 rounded-lg inline-block">
-                            <QRCodeSVG value={`http://localhost:5001/bill/view/${lastBill.invoiceId}`} size={200} />
+                             <QRCodeSVG value={`http://localhost:5001/bill/view/${lastBill.invoiceId}`} size={160} />
                         </div>
                         <p className="text-sm text-gray-500 mt-2">Scan to view receipt</p>
-                        <a href={createWhatsAppLink(lastBill)} target="_blank" rel="noopener noreferrer" className="mt-6 w-full bg-green-500 text-white hover:bg-green-600 px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-center space-x-2">
+                        <a href={createWhatsAppLink(lastBill)} target="_blank" rel="noopener noreferrer" className="mt-6 w-full bg-green-500 text-white hover:bg-green-600 px-4 py-3 rounded-lg font-semibold flex items-center justify-center space-x-2">
                             <MessageSquare />
                             <span>Send on WhatsApp</span>
                         </a>
                     </div>
                 )}
             </Modal>
-
+            <Modal isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)} size="3xl">
+                <div className="p-6">
+                    <h2 className="text-2xl font-bold mb-4">Purchase History for {customerHistory?.customer_name}</h2>
+                    {customerHistory?.bills?.length > 0 ? (
+                        <div className="space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                            {customerHistory.bills.map(invoice => (
+                                <div key={invoice.id} className="border rounded-lg p-4">
+                                    <div className="flex justify-between font-semibold">
+                                        <span>Invoice #{invoice.id} - {invoice.bill_date}</span>
+                                        <span>₹{invoice.grand_total.toFixed(2)}</span>
+                                    </div>
+                                    <ul className="list-disc list-inside text-sm text-gray-600 mt-2">
+                                        {invoice.items.map((item, index) => (
+                                            <li key={index}>{item.medicine_name} (x{item.quantity})</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ))}
+                        </div>
+                    ) : <p>No history found.</p>}
+                </div>
+            </Modal>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                    <h1 className="text-2xl font-bold mb-4">New Customer Bill</h1>
+                    <h1 className="text-2xl font-bold mb-4">
+                        {editingBill ? `Editing Invoice #${editingBill.id}` : 'New Customer Bill'}
+                    </h1>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div className="relative"><Input type="text" placeholder="Search for medicine..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                            {searchResults.length > 0 && <div className="absolute z-10 w-full bg-white border rounded-lg mt-1 shadow-lg">{searchResults.map(med => <div key={med.id} onClick={() => addItem(med)} className="p-2 hover:bg-blue-100 cursor-pointer">{med.name}</div>)}</div>}
+                        <div>
+                            <div className="relative">
+                                <Input 
+                                    type="text" 
+                                    placeholder="Search by name or formula... (min 2 chars)"
+                                    value={searchTerm} 
+                                    onChange={e => setSearchTerm(e.target.value)} 
+                                />
+                                {searchResults.length > 0 && (
+                                     <div className="absolute z-10 w-full bg-white border rounded-lg mt-1 shadow-lg max-h-60 overflow-y-auto">
+                                        {searchResults.map(med => (
+                                            <div key={med.id} onClick={() => addItem(med)} className="p-2 hover:bg-blue-100 cursor-pointer">
+                                                <p className="font-medium">{med.name}</p>
+                                                <p className="text-sm text-gray-500">{med.formula}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                         <div>
-                           <div className="flex gap-2">
+                            <div className="flex gap-2">
                                 <Input type="text" placeholder="Manual Item Name" value={manualItem.name} onChange={e => setManualItem({ ...manualItem, name: e.target.value })} />
                                 <Input type="number" placeholder="MRP" value={manualItem.mrp} onChange={e => setManualItem({ ...manualItem, mrp: e.target.value })} className="w-24" />
                                 <Button onClick={addManualItem} variant="secondary"><PlusCircle size={20} /></Button>
                             </div>
-                             <div className="flex items-center space-x-2 mt-1">
+                            <div className="flex items-center space-x-2 mt-1">
                                 <input type="checkbox" id="saveToInventory" checked={saveToInventory} onChange={e => setSaveToInventory(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"/>
                                 <label htmlFor="saveToInventory" className="text-sm text-gray-600">Add this manual item to main inventory</label>
                             </div>
                         </div>
                     </div>
                     <div className="flow-root">
+                        {/* Table remains the same */}
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead>
                                 <tr>
                                     <th className="py-2 text-left text-sm font-medium text-gray-500">Medicine</th>
                                     <th className="py-2 text-left text-sm font-medium text-gray-500">Qty</th>
+                                    <th className="py-2 text-left text-sm font-medium text-gray-500">PTR</th>
                                     <th className="py-2 text-left text-sm font-medium text-gray-500">MRP</th>
                                     <th className="py-2 text-left text-sm font-medium text-gray-500">Discount (%)</th>
                                     <th className="py-2 text-left text-sm font-medium text-gray-500">Reminder (Days)</th>
@@ -954,17 +1353,10 @@ const BillingView = ({ customer, setCustomer, items, setItems, onBillCreated }) 
                                     <tr key={item.id}>
                                         <td className="py-2 font-medium">{item.name}</td>
                                         <td><Input type="number" value={item.quantity} onChange={e => updateItem(item.id, 'quantity', parseInt(e.target.value) || 1)} className="w-16 p-1"/></td>
+                                        <td><Input type="number" step="0.01" value={item.ptr || ''} onChange={e => updateItem(item.id, 'ptr', parseFloat(e.target.value) || 0)} className="w-24 p-1" placeholder="Purchase Price"/></td>
                                         <td><Input type="number" step="0.01" value={item.mrp} onChange={e => updateItem(item.id, 'mrp', parseFloat(e.target.value) || 0)} className="w-24 p-1"/></td>
                                         <td><Input type="number" value={item.discount} onChange={e => updateItem(item.id, 'discount', parseFloat(e.target.value) || 0)} className="w-16 p-1"/></td>
-                                        <td>
-                                            <Input 
-                                                type="number" 
-                                                placeholder="e.g., 10"
-                                                value={item.reminder_days || ''} 
-                                                onChange={e => updateItem(item.id, 'reminder_days', e.target.value)} 
-                                                className="w-24 p-1"
-                                            />
-                                        </td>
+                                        <td><Input type="number" placeholder="e.g., 10" value={item.reminder_days || ''} onChange={e => updateItem(item.id, 'reminder_days', e.target.value)} className="w-24 p-1"/></td>
                                         <td>₹{((item.quantity || 0) * (item.mrp || 0) * (1 - (item.discount || 0) / 100)).toFixed(2)}</td>
                                         <td><button onClick={() => removeItem(item.id)}><MinusCircle className="h-5 w-5 text-red-500"/></button></td>
                                     </tr>
@@ -973,36 +1365,36 @@ const BillingView = ({ customer, setCustomer, items, setItems, onBillCreated }) 
                         </table>
                     </div>
                 </div>
-                
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 self-start">
+                    {/* Customer Details section remains the same */}
                     <h2 className="text-xl font-bold mb-4">Customer Details</h2>
                     <div className="space-y-4 mb-6">
-                        <Input 
-                            type="text" 
-                            placeholder="Customer Name" 
-                            value={customer.name} 
-                            onChange={e => setCustomer({...customer, name: e.target.value})} 
-                        />
+                        <Input type="text" placeholder="Customer Name" value={customer.name} onChange={e => setCustomer({...customer, name: e.target.value})} />
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-1 block">Customer Phone</label>
                             <div className="flex">
-                                <select 
-                                    value={customer.countryCode}
-                                    onChange={e => setCustomer({...customer, countryCode: e.target.value})}
-                                    className="bg-gray-100 border-gray-300 rounded-l-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 border-r-0"
-                                >
+                                <select value={customer.countryCode} onChange={e => setCustomer({...customer, countryCode: e.target.value})} className="bg-gray-100 border-gray-300 rounded-l-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 border-r-0">
                                     <option value="91">🇮🇳 +91</option>
                                     <option value="1">🇺🇸 +1</option>
                                     <option value="44">🇬🇧 +44</option>
                                     <option value="971">🇦🇪 +971</option>
                                 </select>
-                                <Input 
-                                    type="tel" 
-                                    placeholder="Phone Number" 
-                                    value={customer.localPhone} 
-                                    onChange={e => setCustomer({...customer, localPhone: e.target.value})}
-                                    className="rounded-l-none"
-                                />
+                                <Input type="tel" placeholder="Phone Number" value={customer.localPhone} onChange={e => setCustomer({...customer, localPhone: e.target.value})} className="rounded-l-none"/>
+                            </div>
+                            <div className="h-6 mt-2">
+                                {isHistoryLoading ? (
+                                    <p className="text-sm text-gray-500">Searching history...</p>
+                                ) : customerHistory ? (
+                                    customerHistory.bill_count > 0 ? (
+                                        <button onClick={() => setIsHistoryModalOpen(true)} className="text-sm text-blue-600 hover:underline font-semibold">
+                                            Returning Customer ({customerHistory.bill_count} previous bills)
+                                        </button>
+                                    ) : (
+                                        <p className="text-sm text-green-600 font-semibold">
+                                            New Customer
+                                        </p>
+                                    )
+                                ) : null}
                             </div>
                         </div>
                     </div>
@@ -1024,7 +1416,9 @@ const BillingView = ({ customer, setCustomer, items, setItems, onBillCreated }) 
                             <span>Grand Total:</span><span>₹{grandTotal.toFixed(2)}</span>
                         </div>
                     </div>
-                    <Button onClick={handleSubmitBill} className="w-full mt-6 !py-3">Create Bill</Button>
+                    <Button onClick={handleSubmitBill} className="w-full mt-6 !py-3">
+                        {editingBill ? 'Update Bill' : 'Create Bill'}
+                    </Button>
                 </div>
             </div>
         </>
@@ -1111,8 +1505,8 @@ const createWhatsAppLink = (bill) => {
     if (!bill || !bill.customer || !bill.customer.phone) {
         return '';
     }
-
-    let message = `Hi ${bill.customer.name},\n*Thank you for your purchase from CurePharma !, \nSHOP AGAIN*\n\n*Invoice #${bill.invoiceId}*\n\n`;
+    
+    let message = `Hi ${bill.customer.name},\n *USE THIS CHAT FOR ANY ONLINE ORDERS*\nThank you for your purchase from CurePharma !, \n*SHOP AGAIN*\n\n*Invoice #${bill.invoiceId}*\n\n`;
     
     bill.items.forEach(item => {
         const itemTotal = item.quantity * item.mrp;
@@ -1120,6 +1514,9 @@ const createWhatsAppLink = (bill) => {
     });
 
     message += `\n*Grand Total: ₹${bill.grandTotal.toFixed(2)}*`;
+    message += '\n📎 Bill attached — keep it for your records.';
+    message += '\n💚 Wishing you a speedy recovery!';
+    message += '\n*— Team CurePharma*';
     
     const encodedMessage = encodeURIComponent(message);
 
@@ -1128,6 +1525,20 @@ const createWhatsAppLink = (bill) => {
     
     // Note: The user must still enter the country code (e.g., 91) in the form
    return `https://web.whatsapp.com/send?phone=${sanitizedPhone}&text=${encodedMessage}`;
+};
+
+
+const createWhatsAppLinkForBill = (bill) => {
+    let message = `*Thank you for your purchase from CurePharma X!*\n\n*Invoice #${bill.id}*\n\n`;
+    bill.items.forEach(item => {
+        const itemTotal = item.quantity * item.mrp;
+        message += `- ${item.medicine_name} (x${item.quantity}): ₹${itemTotal.toFixed(2)}\n`;
+    });
+    message += `\n*Grand Total: ₹${bill.grand_total.toFixed(2)}*`;
+    message += '\n *USE THIS CHAT FOR ANY FURTHER ORDERS :)*';
+    const encodedMessage = encodeURIComponent(message);
+    const sanitizedPhone = bill.customer_phone.replace(/[^0-9]/g, '');
+    return `https://web.whatsapp.com/send?phone=${sanitizedPhone}&text=${encodedMessage}`;
 };
 
 // --- NEW: Helper function for reminder messages ---
@@ -1145,47 +1556,72 @@ const createReminderWhatsAppLink = (reminder) => {
     
 };
 
-// --- DEFINITIVE --- Dashboard Component with Robust Loading ---
 const Dashboard = ({ setActiveView }) => {
     const [stats, setStats] = useState(null);
     const [modalContent, setModalContent] = useState(null);
+    
+    // State for the new Profit Modal
+    const [isProfitModalOpen, setIsProfitModalOpen] = useState(false);
+    const [profitDetails, setProfitDetails] = useState([]);
+    const [isProfitDetailsLoading, setIsProfitDetailsLoading] = useState(false);
 
     useEffect(() => {
         api.get('/dashboard-stats').then(res => setStats(res.data));
     }, []);
 
+    // Reusable StatCard component
     const StatCard = ({ title, value, icon: Icon, color, onClick }) => (
-        <motion.div whileHover={{ y: -5 }} onClick={onClick} className={`bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between ${onClick ? 'cursor-pointer hover:border-blue-500 hover:bg-blue-50' : ''}`}>
+        <motion.div 
+            whileHover={{ y: -5 }} 
+            onClick={onClick} 
+            className={`bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between ${onClick ? 'cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all' : ''}`}
+        >
             <div>
                 <p className="text-sm text-gray-500 font-medium">{title}</p>
-                {/* This now shows a placeholder while loading */}
                 <p className="text-3xl font-bold text-gray-800">{value ?? '...'}</p>
             </div>
-            <div className={`p-3 rounded-full ${color}`}><Icon className="h-6 w-6 text-white" /></div>
+            <div className={`p-3 rounded-full ${color}`}>
+                <Icon className="h-6 w-6 text-white" />
+            </div>
         </motion.div>
     );
 
+    // Function to open the modal for low stock, expiring, etc.
     const openModal = async (type) => {
         let title = '';
         let data = [];
+        let endpoint = '';
+
         if (type === 'low-stock') {
             title = 'Low Stock Medicines (<10)';
-            const res = await api.get('/medicines?filter=low_stock');
-            data = res.data;
+            endpoint = '/medicines?filter=low_stock';
         } else if (type === 'expiring_soon') {
             title = 'Medicines Expiring in 60 Days';
-            const res = await api.get('/medicines?filter=expiring_soon');
-            data = res.data;
+            endpoint = '/medicines?filter=expiring_soon';
         } else if (type === 'expired') {
             title = 'Expired Medicines';
-            const res = await api.get('/medicines?filter=expired');
+            endpoint = '/medicines?filter=expired';
+        }
+        
+        if(endpoint) {
+            const res = await api.get(endpoint);
             data = res.data;
         }
         setModalContent({ title, data, type });
     };
 
+    // Function to open the new profit details modal
+    const openProfitModal = () => {
+        setIsProfitDetailsLoading(true);
+        setIsProfitModalOpen(true);
+        api.get('/profit-today-details')
+           .then(res => setProfitDetails(res.data))
+           .finally(() => setIsProfitDetailsLoading(false));
+    };
+
     return (
         <>
+            {/* Modal for Low Stock, Expired, etc. */}
             <Modal isOpen={!!modalContent} onClose={() => setModalContent(null)}>
                 <div className="p-6 flex flex-col">
                     <h2 className="text-xl font-bold mb-4">{modalContent?.title}</h2>
@@ -1213,20 +1649,78 @@ const Dashboard = ({ setActiveView }) => {
                     </div>
                 </div>
             </Modal>
+
+            {/* NEW Modal for Profit Details */}
+            <Modal isOpen={isProfitModalOpen} onClose={() => setIsProfitModalOpen(false)} size="3xl">
+                <div className="p-6">
+                    <h2 className="text-2xl font-bold mb-4">Today's Profit Breakdown</h2>
+                    {isProfitDetailsLoading ? <p>Loading details...</p> : (
+                        <div className="max-h-[70vh] overflow-y-auto custom-scrollbar">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-gray-50 sticky top-0">
+                                    <tr>
+                                        <th className="p-3 font-semibold">Medicine</th>
+                                        <th className="p-3 font-semibold text-center">Qty Sold</th>
+                                        <th className="p-3 font-semibold text-right">MRP</th>
+                                        <th className="p-3 font-semibold text-right">Cost Price</th>
+                                        <th className="p-3 font-semibold text-right">Profit / Item</th>
+                                        <th className="p-3 font-semibold text-right">Total Profit</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {profitDetails.map((item, index) => (
+                                        <tr key={index} className="border-t">
+                                            <td className="p-3 font-medium">{item.medicine_name}</td>
+                                            <td className="p-3 text-center">{item.quantity_sold}</td>
+                                            <td className="p-3 text-right">₹{item.mrp.toFixed(2)}</td>
+                                            <td className="p-3 text-right text-gray-500">₹{item.cost_price.toFixed(2)}</td>
+                                            <td className={`p-3 text-right font-semibold ${item.profit_per_item >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                                ₹{item.profit_per_item.toFixed(2)}
+                                            </td>
+                                            <td className={`p-3 text-right font-bold ${item.total_profit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                                                ₹{item.total_profit.toFixed(2)}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot className="font-bold bg-gray-100 sticky bottom-0">
+                                    <tr className="border-t-2">
+                                        <td colSpan="5" className="p-3 text-right">Total Profit Today</td>
+                                        <td className="p-3 text-right text-lg text-green-700">
+                                            ₹{profitDetails.reduce((acc, item) => acc + item.total_profit, 0).toFixed(2)}
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            </Modal>
+
             <h1 className="text-3xl font-bold mb-6">Dashboard</h1>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-                {/* --- THIS IS THE KEY FIX --- */}
-                {/* We now use optional chaining (?.) and provide a default value ('...') */}
-                {/* This prevents the crash by gracefully handling the initial loading state. */}
-                <StatCard title="Total Medicines" value={stats?.totalMedicines} icon={Package} color="bg-blue-500" />
                 <StatCard title="Sales Today" value={`₹${stats?.salesToday?.toFixed(2) ?? '0.00'}`} icon={DollarSign} color="bg-green-500" />
+                <StatCard 
+                    title="Profit Today" 
+                    value={`₹${stats?.profitToday?.toFixed(2) ?? '0.00'}`} 
+                    icon={TrendingUp}
+                    color="bg-teal-500" 
+                    onClick={openProfitModal} 
+                />
+                <StatCard title="Total Medicines" value={stats?.totalMedicines} icon={Package} color="bg-blue-500" />
                 <StatCard title="Low Stock" value={stats?.lowStockCount} icon={AlertTriangle} color="bg-yellow-500" onClick={() => openModal('low-stock')} />
                 <StatCard title="Expiring Soon (60d)" value={stats?.expiringSoonCount} icon={History} color="bg-indigo-500" onClick={() => openModal('expiring_soon')} />
+                <StatCard 
+                    title="Pending Reminders" 
+                    value={stats?.pendingReminders} 
+                    icon={BellRing}
+                    color="bg-cyan-500" 
+                    onClick={() => setActiveView('alerts')} 
+                />
                 <StatCard title="Shortages" value={stats?.shortageCount} icon={ClipboardX} color="bg-orange-500" onClick={() => setActiveView('shortages')} />    
             </div>
             <div className="mt-8 bg-white p-6 rounded-xl shadow-sm border border-gray-200">
                 <h2 className="text-lg font-bold mb-4">Sales (Last 30 Days)</h2>
-                {/* This also now waits for data before trying to render the chart */}
                 {stats ? (
                     <ResponsiveContainer width="100%" height={300}>
                         <LineChart data={stats.salesChart} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
@@ -1244,7 +1738,6 @@ const Dashboard = ({ setActiveView }) => {
         </>
     );
 };
-
 
 const CustomerHistoryView = () => {
     const [query, setQuery] = useState('');
@@ -1308,41 +1801,90 @@ const PurchaseInvoiceView = () => {
     );
 };
 
-
-// --- UPDATED --- Customer Bills View with Search and Delete ---
-const CustomerBillsView = () => {
+const CustomerBillsView = ({ onEditBill }) => {
     const [bills, setBills] = useState([]);
     const [selectedBill, setSelectedBill] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [searchTerm, setSearchTerm] = useState(''); // State for the search bar
+    const [searchTerm, setSearchTerm] = useState('');
 
-    // This function now includes the search term in the API call
-    const fetchBills = useCallback(() => {
+    // --- STATE for Broadcast Feature ---
+    const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
+    const [broadcastMessage, setBroadcastMessage] = useState("Hello! We have new offers at CurePharma X. Visit us for exciting discounts!");
+    const [allPhones, setAllPhones] = useState([]);
+    const [selectedPhones, setSelectedPhones] = useState(new Set());
+    const [isLoadingPhones, setIsLoadingPhones] = useState(false);
+
+    const fetchBills = useCallback(() => { 
         api.get(`/customer-bills?q=${searchTerm}`).then(res => setBills(res.data));
-    }, [searchTerm]); // It re-runs whenever the search term changes
+    }, [searchTerm]);
 
-    useEffect(() => {
+    useEffect(() => { 
         const handler = setTimeout(() => {
             fetchBills();
-        }, 300); // Debounce search to avoid too many API calls
+        }, 300);
         return () => clearTimeout(handler);
     }, [searchTerm, fetchBills]);
 
-    const viewBillDetails = (bill) => {
+    const viewBillDetails = (bill) => { 
         setSelectedBill(bill);
         setIsModalOpen(true);
     };
-
-    // New function to handle the delete action
-    const handleDelete = async (billId) => {
+    
+    const handleDelete = async (billId) => { 
         if (window.confirm('Are you sure you want to permanently delete this bill?')) {
             try {
                 await api.delete(`/customer-bills/${billId}`);
-                fetchBills(); // Refresh the list after deleting
+                fetchBills();
             } catch (error) {
                 alert('Failed to delete the bill.');
             }
         }
+    };
+
+    const handleFetchPhones = () => {
+        setIsLoadingPhones(true);
+        api.get('/customers/all-phones')
+           .then(res => {
+               setAllPhones(res.data);
+               setSelectedPhones(new Set(res.data)); // Auto-select all by default
+           })
+           .finally(() => setIsLoadingPhones(false));
+    };
+
+    const handleSelectAll = (e) => {
+        if (e.target.checked) {
+            setSelectedPhones(new Set(allPhones));
+        } else {
+            setSelectedPhones(new Set());
+        }
+    };
+
+    const handlePhoneSelect = (phone, isChecked) => {
+        setSelectedPhones(prev => {
+            const newSet = new Set(prev);
+            if (isChecked) {
+                newSet.add(phone);
+            } else {
+                newSet.delete(phone);
+            }
+            return newSet;
+        });
+    };
+
+    const handleSendBroadcast = () => {
+        if (selectedPhones.size === 0) {
+            alert("Please select at least one phone number.");
+            return;
+        }
+        
+        const message = encodeURIComponent(broadcastMessage);
+        selectedPhones.forEach((phone, index) => {
+            const sanitizedPhone = phone.replace(/[^0-9]/g, '');
+            const url = `https://api.whatsapp.com/send?phone=${sanitizedPhone}&text=${message}`;
+            setTimeout(() => {
+                window.open(url, '_blank');
+            }, index * 200); 
+        });
     };
 
     return (
@@ -1378,9 +1920,67 @@ const CustomerBillsView = () => {
                 )}
             </Modal>
 
-            <h1 className="text-3xl font-bold mb-6">Customer Bills</h1>
+            <Modal isOpen={isBroadcastModalOpen} onClose={() => setIsBroadcastModalOpen(false)} size="3xl">
+                <div className="p-6">
+                    <h2 className="text-2xl font-bold mb-4">Send Broadcast Message</h2>
+                    <div className="space-y-4">
+                        <label htmlFor="broadcast-message" className="block text-sm font-medium text-gray-700">Your Message:</label>
+                        <textarea id="broadcast-message" rows="4" className="w-full bg-gray-100 border-gray-300 rounded-lg p-3" value={broadcastMessage} onChange={(e) => setBroadcastMessage(e.target.value)} />
+                        
+                        <div className="flex items-center space-x-4">
+                             <Button onClick={handleFetchPhones} disabled={isLoadingPhones}>
+                                {isLoadingPhones ? 'Loading...' : `Generate List (${allPhones.length > 0 ? allPhones.length : ''})`}
+                            </Button>
+                            {allPhones.length > 0 && (
+                                <Button onClick={handleSendBroadcast} className="!bg-green-600 hover:!bg-green-700">
+                                    Send to {selectedPhones.size} Selected Customers
+                                </Button>
+                            )}
+                        </div>
+
+                        {allPhones.length > 0 && (
+                            <div className="mt-4 p-4 bg-slate-50 rounded-lg max-h-64 overflow-y-auto custom-scrollbar">
+                                <div className="flex items-center mb-2 border-b pb-2">
+                                    <input type="checkbox" id="select-all" checked={selectedPhones.size === allPhones.length && allPhones.length > 0} onChange={handleSelectAll} className="h-5 w-5 rounded"/>
+                                    <label htmlFor="select-all" className="ml-2 font-semibold">Select All ({selectedPhones.size} / {allPhones.length})</label>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                    {allPhones.map(phone => (
+                                        <div key={phone} className="flex items-center p-2 bg-white rounded-md shadow-sm">
+                                            <input 
+                                                type="checkbox" 
+                                                id={`phone-${phone}`}
+                                                checked={selectedPhones.has(phone)}
+                                                onChange={(e) => handlePhoneSelect(phone, e.target.checked)}
+                                                className="h-4 w-4 rounded"
+                                            />
+                                            {/* --- THIS IS THE NEW CLICKABLE LINK --- */}
+                                            <a 
+                                                href={`https://web.whatsapp.com/send?phone=${phone.replace(/[^0-9]/g, '')}&text=${encodeURIComponent(broadcastMessage)}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="ml-2 text-sm text-blue-600 hover:underline cursor-pointer"
+                                                title={`Send message to ${phone}`}
+                                            >
+                                                {phone}
+                                            </a>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </Modal>
+
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-3xl font-bold">Customer Bills</h1>
+                <Button onClick={() => { setAllPhones([]); setSelectedPhones(new Set()); setIsBroadcastModalOpen(true); }}>
+                    <MessageSquare size={20} />
+                    <span>Broadcast</span>
+                </Button>
+            </div>
             
-            {/* --- NEW: Search Bar --- */}
             <div className="mb-6 relative">
                 <Input
                     type="text"
@@ -1406,15 +2006,22 @@ const CustomerBillsView = () => {
                     </thead>
                     <tbody>
                         {bills.map(bill => (
-                            <tr key={bill.id} className="border-t">
+                            <tr key={bill.id} className="border-t hover:bg-gray-50">
                                 <td className="p-3 font-medium">{bill.id}</td>
                                 <td className="p-3">{bill.customer_name}</td>
                                 <td className="p-3 text-gray-500">{bill.customer_phone}</td>
                                 <td className="p-3 text-gray-500">{bill.bill_date}</td>
                                 <td className="p-3 text-right font-semibold">₹{bill.grand_total.toFixed(2)}</td>
-                                <td className="p-3 text-right space-x-2">
-                                    <Button variant="secondary" onClick={() => viewBillDetails(bill)} className="!py-1 !px-3">View</Button>
-                                    {/* --- NEW: Delete Button --- */}
+                                <td className="p-3 text-right space-x-2 flex items-center justify-end">
+                                    <a href={createWhatsAppLinkForBill(bill)} target="_blank" rel="noopener noreferrer" className="p-2 text-gray-500 hover:text-green-600" title="Send on WhatsApp">
+                                        <MessageSquare size={18} />
+                                    </a>
+                                    <button onClick={() => viewBillDetails(bill)} className="p-2 text-gray-500 hover:text-gray-800" title="View Bill">
+                                        <FileText size={18} />
+                                    </button>
+                                    <button onClick={() => onEditBill(bill)} className="p-2 text-gray-500 hover:text-blue-600" title="Edit Bill">
+                                        <Edit size={18} />
+                                    </button>
                                     <button onClick={() => handleDelete(bill.id)} className="p-2 text-gray-500 hover:text-red-600" title="Delete Bill">
                                         <Trash2 size={18} />
                                     </button>
@@ -1427,6 +2034,7 @@ const CustomerBillsView = () => {
         </>
     );
 };
+
 
 
 // --- NEW --- Advance Form Component (for the Modal) ---
@@ -1454,6 +2062,220 @@ const AdvanceForm = ({ onSave, onCancel }) => {
         </form>
     );
 };
+
+
+// --- NEW: Daily Sales View Component ---
+const DailySalesView = () => {
+    const [summary, setSummary] = useState([]);
+    const [details, setDetails] = useState([]);
+    const [selectedDate, setSelectedDate] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isDetailsLoading, setIsDetailsLoading] = useState(false);
+
+    useEffect(() => {
+        api.get('/daily-sales-summary')
+           .then(res => setSummary(res.data))
+           .finally(() => setIsLoading(false));
+    }, []);
+
+    const viewDayDetails = (date_str) => {
+        setSelectedDate(date_str);
+        setIsDetailsLoading(true);
+        api.get(`/daily-sales/${date_str}`)
+           .then(res => setDetails(res.data))
+           .finally(() => setIsDetailsLoading(false));
+    };
+
+    if (isLoading) return <p>Loading daily sales...</p>;
+
+    return (
+        <>
+            <Modal isOpen={!!selectedDate} onClose={() => setSelectedDate(null)} size="3xl">
+                <div className="p-6">
+                    <h2 className="text-2xl font-bold mb-4">Invoice Details for {selectedDate}</h2>
+                    {isDetailsLoading ? <p>Loading details...</p> : (
+                        <div className="space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                            {details.map(invoice => (
+                                <div key={invoice.id} className="border rounded-lg p-4">
+                                    <div className="flex justify-between font-semibold">
+                                        <span>Invoice #{invoice.id} - {invoice.customer_name}</span>
+                                        <span>₹{invoice.grand_total.toFixed(2)}</span>
+                                    </div>
+                                    <ul className="list-disc list-inside text-sm text-gray-600 mt-2">
+                                        {invoice.items.map((item, index) => (
+                                            <li key={index}>{item.medicine_name} (x{item.quantity})</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </Modal>
+
+            <h1 className="text-3xl font-bold mb-6">Daily Sales Summary</h1>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="p-3 font-semibold">Date</th>
+                            <th className="p-3 font-semibold">Total Bills</th>
+                            <th className="p-3 font-semibold text-right">Total Profit (₹)</th>
+                            <th className="p-3 font-semibold text-right">Total Sales (₹)</th>
+                            <th className="p-3 font-semibold text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {summary.map(day => (
+                            <tr key={day.date} className="border-t">
+                                <td className="p-3 font-medium">{day.date}</td>
+                                <td className="p-3 text-gray-500">{day.bill_count}</td>
+                                <td className={`p-3 text-right font-semibold ${day.total_profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                    ₹{day.total_profit.toFixed(2)}
+                                </td>
+                                <td className="p-3 text-right font-semibold">₹{day.total_sales.toFixed(2)}</td>
+                                <td className="p-3 text-right">
+                                    <Button variant="secondary" onClick={() => viewDayDetails(day.date)} className="!py-1 !px-3">
+                                        View Details
+                                    </Button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </>
+    );
+};
+
+const SalesView = () => {
+    // State for date range
+    const [startDate, setStartDate] = useState(() => {
+        const date = new Date();
+        date.setDate(date.getDate() - 6); // Default to last 7 days
+        return date.toISOString().split('T')[0];
+    });
+    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+    
+    // State for report data
+    const [reportData, setReportData] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState('');
+
+    const fetchReport = useCallback(() => {
+        setIsLoading(true);
+        setError('');
+        api.get(`/advanced-sales-report?start_date=${startDate}&end_date=${endDate}`)
+            .then(res => setReportData(res.data))
+            .catch(err => setError('Could not fetch report. Please check the date range.'))
+            .finally(() => setIsLoading(false));
+    }, [startDate, endDate]);
+
+    useEffect(() => {
+        fetchReport();
+    }, [fetchReport]);
+
+    const handleDownloadCSV = () => {
+        if (!reportData || !reportData.daily_trends) return;
+        
+        let csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "Date,Sales,Profit\n"; // Header row
+        
+        reportData.daily_trends.forEach(row => {
+            csvContent += `${row.date},${row.sales.toFixed(2)},${row.profit.toFixed(2)}\n`;
+        });
+        
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `sales_report_${startDate}_to_${endDate}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    return (
+        <>
+            <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+                <h1 className="text-3xl font-bold">Advanced Sales Report</h1>
+                <div className="flex items-center gap-2">
+                    <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                    <span className="font-semibold">to</span>
+                    <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+                    <Button onClick={fetchReport}>Generate</Button>
+                </div>
+            </div>
+
+            {isLoading ? (
+                <p>Generating your report...</p>
+            ) : error ? (
+                <p className="text-red-500">{error}</p>
+            ) : reportData && (
+                <div className="space-y-8">
+                    {/* --- Key Metrics --- */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <StatCard title="Total Sales" value={`₹${reportData.period_totals.total_sales.toFixed(2)}`} color="bg-green-500" />
+                        <StatCard title="Total Profit" value={`₹${reportData.period_totals.total_profit.toFixed(2)}`} color="bg-teal-500" />
+                    </div>
+
+                    {/* --- Sales & Profit Trend Chart --- */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border">
+                        <h2 className="text-lg font-bold mb-4">Sales & Profit Trend</h2>
+                        <ResponsiveContainer width="100%" height={300}>
+                            <LineChart data={reportData.daily_trends}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="date" />
+                                <YAxis />
+                                <Tooltip />
+                                <Line type="monotone" dataKey="sales" stroke="#3b82f6" name="Sales" strokeWidth={2} />
+                                <Line type="monotone" dataKey="profit" stroke="#14b8a6" name="Profit" strokeWidth={2} />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    {/* --- Top Products --- */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <ProductList title="Top 5 Best-Selling Products" data={reportData.top_selling_products} unit="units sold" />
+                        <ProductList title="Top 5 Most Profitable Products" data={reportData.top_profitable_products} unit="in profit" isCurrency={true} />
+                    </div>
+
+                    {/* --- Download Button --- */}
+                    <div className="text-right">
+                        <Button variant="secondary" onClick={handleDownloadCSV}>
+                            <Download size={18} />
+                            <span>Download Daily Summary (CSV)</span>
+                        </Button>
+                    </div>
+                </div>
+            )}
+        </>
+    );
+};
+
+// Helper components for the SalesView
+const StatCard = ({ title, value, color }) => (
+    <div className="bg-white p-5 rounded-xl shadow-sm border flex justify-between items-center">
+        <p className="text-lg font-semibold text-gray-700">{title}</p>
+        <p className={`text-3xl font-bold ${color.replace('bg-', 'text-')}`}>{value}</p>
+    </div>
+);
+
+const ProductList = ({ title, data, unit, isCurrency = false }) => (
+    <div className="bg-white p-6 rounded-xl shadow-sm border">
+        <h2 className="text-lg font-bold mb-4">{title}</h2>
+        <ul className="space-y-3">
+            {data.map((item, index) => (
+                <li key={index} className="flex justify-between items-center text-sm">
+                    <span className="font-medium text-gray-800">{item.name}</span>
+                    <span className="font-bold text-blue-600">
+                        {isCurrency ? `₹${item.value.toFixed(2)}` : item.value} {unit}
+                    </span>
+                </li>
+            ))}
+        </ul>
+    </div>
+);
+
 
 // --- NEW --- Advances View Component ---
 const AdvancesView = () => {
@@ -1557,6 +2379,27 @@ const ShortageForm = ({ onSave, onCancel }) => {
         </form>
     );
 };
+
+// --- ADD THIS NEW COMPONENT ---
+// This component's only job is to inject our custom CSS into the app.
+const GlobalStyles = () => (
+  <style jsx global>{`
+    /* A subtle, blue scrollbar for Webkit browsers */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 8px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background-color: rgba(59, 130, 246, 0.4); /* Tailwind's blue-500 with 40% opacity */
+      border-radius: 8px;
+    }
+    .custom-scrollbar:hover::-webkit-scrollbar-thumb {
+      background-color: rgba(59, 130, 246, 0.6); /* 60% opacity on hover */
+    }
+  `}</style>
+);
 
 // --- NEW --- Shortages View Component ---
 const ShortagesView = () => {
