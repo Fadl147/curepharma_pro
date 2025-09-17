@@ -17,4 +17,4 @@ backend/build/
 # IDE / system files
 *.log
 .DS_Store
-backend/build/
+

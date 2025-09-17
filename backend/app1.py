@@ -45,6 +45,10 @@ def serve_react():
     return send_from_directory(app.static_folder, "index.html")
 app.config.from_object(Config)
 
+@app.errorhandler(404)
+def not_found(e):
+    return send_from_directory(app.static_folder, "index.html")
+
 # Ensure the upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
