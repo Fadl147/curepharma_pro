@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, Fragment } from 'react';
 import { QRCodeSVG } from 'qrcode.react'; // --- NEW: Import QR Code component
-import { QrCode, MessageSquare } from 'lucide-react'; // --- NEW: Import Icons
+import { MessageSquare } from 'lucide-react'; // --- NEW: Import Icons
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Pill, LayoutDashboard, Package, LogOut, AlertTriangle, PlusCircle, Trash2, Edit, X, CalendarDays, Search, FileText, ClipboardX, Download, TrendingUp, Store ,Receipt, History, MinusCircle, DollarSign, Upload, Building, BrainCircuit, Sparkles,ClipboardList, Wallet, ArrowLeft,BellRing, HeartPulse, Baby, ShieldCheck, Bone, Sun, Wind } from 'lucide-react';
+import { Pill, LayoutDashboard, Package, LogOut, AlertTriangle, PlusCircle, Trash2, Edit, X, CalendarDays, Search, FileText, ClipboardX, Download, TrendingUp, Store ,Receipt, History, MinusCircle, DollarSign, Upload, Building, ClipboardList, Wallet, ArrowLeft,BellRing, HeartPulse, Baby, ShieldCheck, Bone, Sun, Wind } from 'lucide-react';
 
 // --- Axios Configuration ---
 const api = axios.create({ baseURL: 'http://localhost:5001/api', withCredentials: true });
@@ -807,37 +807,6 @@ const InventorySystem = ({ user, onLogout }) => {
 };
 
 
-const NavItem = ({ icon: Icon, label, viewName, isExpanded, activeView, setActiveView }) => {
-    const isSalesView = activeView === 'sales';
-    const isActive = activeView === viewName;
-
-    // Define styles for both themes
-    const baseStyle = isSalesView ? 'text-gray-400 hover:bg-gray-700 hover:text-white' : 'text-blue-100 hover:bg-blue-700';
-    const activeStyle = isSalesView ? 'bg-gray-700 text-white shadow-inner' : 'bg-blue-700 text-white shadow-inner';
-
-    return (
-        <button
-            onClick={() => setActiveView(viewName)}
-            className={`flex items-center space-x-3 px-3 py-2 rounded-lg w-full text-left transition-colors duration-200 ${isActive ? activeStyle : baseStyle}`}
-        >
-            <Icon className="h-5 w-5 flex-shrink-0" />
-            <AnimatePresence>
-                {isExpanded && (
-                    <motion.span 
-                        initial={{ opacity: 0, width: 0 }}
-                        animate={{ opacity: 1, width: 'auto' }}
-                        exit={{ opacity: 0, width: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="whitespace-nowrap"
-                    >
-                        {label}
-                    </motion.span>
-                )}
-            </AnimatePresence>
-        </button>
-    );
-};
-
 
 const MedicinesView = () => {
     const [medicines, setMedicines] = useState([]);
@@ -927,101 +896,6 @@ const MedicinesView = () => {
     );
 };
 
-
-// --- AI Chatbot View (Corrected) ---
-const ChatbotView = () => {
-    const [messages, setMessages] = useState([
-        { sender: 'bot', text: 'Hello! I am your AI assistant. How can I help? Please describe the symptoms.' }
-    ]);
-    const [inputValue, setInputValue] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-
-    // This is a MOCK API call. You can replace this with a real call to your trained model.
-    const getBotResponse = async (userInput) => {
-        // Simulate network delay to make it feel real
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        const input = userInput.toLowerCase();
-        
-        // Simple keyword-based logic. Your real AI model would handle this more intelligently.
-        if (input.includes('headache') && input.includes('fever')) {
-            return 'For headache and fever, consider Paracetamol or Ibuprofen. Please check for allergies first.';
-        }
-        if (input.includes('headache')) {
-            return 'For a simple headache, a pain reliever like Paracetamol or Aspirin could be effective.';
-        }
-        if (input.includes('cough') && (input.includes('dry') || input.includes('sore throat'))) {
-            return 'For a dry cough and sore throat, a cough suppressant like Dextromethorphan or lozenges could provide relief.';
-        }
-        if (input.includes('cough') && (input.includes('mucus') || input.includes('chest congestion'))) {
-             return 'For a productive cough with mucus, an expectorant like Guaifenesin might be helpful.';
-        }
-        if (input.includes('runny nose') || input.includes('sneezing')) {
-            return 'For symptoms like a runny nose or sneezing, an antihistamine like Cetirizine or Loratadine is often recommended.';
-        }
-        if (input.includes('stomach ache') || input.includes('indigestion')) {
-            return 'For stomach ache or indigestion, an antacid can provide relief. If the pain is severe or persistent, please consult a doctor.';
-        }
-
-        return "I'm sorry, I'm not familiar with those symptoms. Please try describing them differently or consult a pharmacist directly for assistance.";
-    };
-
-    const handleSendMessage = async (e) => {
-        e.preventDefault();
-        if (!inputValue.trim()) return;
-
-        const userMessage = { sender: 'user', text: inputValue };
-        setMessages(prev => [...prev, userMessage]);
-        setInputValue('');
-        setIsLoading(true);
-
-        const botResponseText = await getBotResponse(inputValue);
-        const botMessage = { sender: 'bot', text: botResponseText };
-
-        setMessages(prev => [...prev, botMessage]);
-        setIsLoading(false);
-    };
-
-    return (
-        <div className="h-full flex flex-col">
-            <h1 className="text-3xl font-bold mb-4">AI Symptom Helper</h1>
-            <div className="flex-grow bg-white rounded-xl shadow-sm border border-gray-200 p-4 overflow-y-auto mb-4">
-                <AnimatePresence>
-                    {messages.map((msg, index) => (
-                        <motion.div
-                            key={index}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.3 }}
-                            className={`flex mb-4 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                        >
-                            <div className={`rounded-2xl p-3 max-w-lg ${msg.sender === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-gray-200 text-gray-800 rounded-bl-none'}`}>
-                                {msg.text}
-                            </div>
-                        </motion.div>
-                    ))}
-                </AnimatePresence>
-                {isLoading && (
-                    <div className="flex justify-start">
-                         <div className="rounded-2xl p-3 bg-gray-200 text-gray-500 rounded-bl-none">
-                            Thinking...
-                         </div>
-                    </div>
-                )}
-            </div>
-            <form onSubmit={handleSendMessage} className="flex gap-2">
-                <Input
-                    type="text"
-                    placeholder="Describe symptoms here..."
-                    value={inputValue}
-                    onChange={e => setInputValue(e.target.value)}
-                    disabled={isLoading}
-                />
-                <Button type="submit" disabled={isLoading}>Send</Button>
-            </form>
-        </div>
-    );
-};
 
 const MedicineForm = ({ medicine, onSave, onCancel }) => {
     const [formData, setFormData] = useState({
