@@ -39,16 +39,6 @@ class Config:
 # Tell Flask that "build" is where React's static files live
 app = Flask(__name__, static_folder="build", static_url_path="/")
 
-# Add this route to handle the root URL
-@app.route('/')
-def serve_react():
-    return send_from_directory(app.static_folder, "index.html")
-app.config.from_object(Config)
-
-@app.errorhandler(404)
-def not_found(e):
-    return send_from_directory(app.static_folder, "index.html")
-
 # Ensure the upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -1214,6 +1204,15 @@ def init_db_command():
     with app.app_context():
         db.create_all()
     print("✅ Initialized the database and created all tables.")
+
+@app.route('/')
+def serve_react():
+    return send_from_directory(app.static_folder, "index.html")
+app.config.from_object(Config)
+
+@app.errorhandler(404)
+def not_found(e):
+    return send_from_directory(app.static_folder, "index.html")
 
 
 # --- RUN APP ---
