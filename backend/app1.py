@@ -11,7 +11,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from collections import defaultdict
 
 
-from flask import Flask, request, jsonify, session, render_template_string
+from flask import Flask, request, jsonify, session, render_template_string,send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -36,12 +36,13 @@ class Config:
     # Uploads folder
     UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 
-# --- APPLICATION SETUP ---
-app = Flask(__name__)
+# Tell Flask that "build" is where React's static files live
+app = Flask(__name__, static_folder="build", static_url_path="/")
+
 # Add this route to handle the root URL
 @app.route('/')
-def home():
-    return "Your project is working!"
+def serve_react():
+    return send_from_directory(app.static_folder, "index.html")
 app.config.from_object(Config)
 
 # Ensure the upload folder exists
