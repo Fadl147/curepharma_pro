@@ -657,16 +657,20 @@ const InventorySystem = ({ user, onLogout }) => {
     };
 
     // Helper component for the sidebar navigation items
-    const NavItem = ({ icon: Icon, label, viewName }) => {
+    const NavItem = ({ icon: Icon, label, viewName,setIsMobileMenuOpen }) => {
         const isSalesView = activeView === 'sales';
         const isActive = activeView === viewName;
-
+        
         const baseStyle = isSalesView ? 'text-gray-400 hover:bg-gray-700 hover:text-white' : 'text-blue-100 hover:bg-blue-700';
         const activeStyle = isSalesView ? 'bg-gray-700 text-white shadow-inner' : 'bg-blue-700 text-white shadow-inner';
 
         return (
             <button
-                onClick={() => setActiveView(viewName)}
+               onClick={() => {
+    setActiveView(viewName);
+    setIsMobileMenuOpen(false); // This closes the mobile menu
+}}
+            
                 className={`flex items-center space-x-3 px-3 py-2 rounded-lg w-full text-left transition-colors duration-200 ${isActive ? activeStyle : baseStyle}`}
             >
                 <Icon className="h-5 w-5 flex-shrink-0" />
@@ -733,8 +737,14 @@ const InventorySystem = ({ user, onLogout }) => {
         <div className={`flex h-screen transition-colors duration-500 ease-in-out ${
             activeView === 'sales' ? 'bg-black text-gray-300' : 'bg-gray-50 text-gray-800'
         }`}>
+             {isMobileMenu-Open && (
+            <div
+                className="fixed inset-0 bg-black/60 z-30 md:hidden"
+                onClick={() => setIsMobileMenuOpen(false)}
+            ></div>
+        )}
             <motion.aside
-                className={`p-4 flex flex-col shrink-0 shadow-lg transition-colors duration-500 ease-in-out ${
+                className={`fixed inset-y-0 left-0 z-40 p-4 flex flex-col shrink-0 shadow-lg transition-transform duration-300 ease-in-out md:static md:translate-x-0 ${
                     activeView === 'sales' ? 'bg-gray-900 border-r border-gray-800' : 'bg-blue-600'
                 }`}
                 onMouseEnter={() => setIsSidebarExpanded(true)}
@@ -761,18 +771,18 @@ const InventorySystem = ({ user, onLogout }) => {
 
                 <div className="flex-grow overflow-y-auto -mr-2 pr-2 custom-scrollbar">
                     <nav className="space-y-1">
-                        <NavItem icon={LayoutDashboard} label="Dashboard" viewName="dashboard" />
-                        <NavItem icon={Package} label="Medicines" viewName="medicines" />
-                        <NavItem icon={Receipt} label="New Bill" viewName="billing" />
-                        <NavItem icon={CalendarDays} label="Daily Sales" viewName="daily-sales" />
-                        <NavItem icon={TrendingUp} label=" Advance Sales" viewName="sales" />
-                        <NavItem icon={BellRing} label="Reminders" viewName="alerts" />
-                        <NavItem icon={Building} label="Agency Invoices" viewName="purchase-invoices" />
-                        <NavItem icon={ClipboardList} label="Customer Bills" viewName="customer-bills" />
-                        <NavItem icon={Wallet} label="Advances" viewName="advances" />
-                        <NavItem icon={ClipboardX} label="Shortages" viewName="shortages" />
-                        <NavItem icon={History} label="Customer History" viewName="customer-history" />
-                        <NavItem icon={Upload} label="Import CSV" viewName="import" />
+                        <NavItem icon={LayoutDashboard} label="Dashboard" viewName="dashboard" setIsMobileMenuOpen={setIsMobileMenuOpen} />
+                        <NavItem icon={Package} label="Medicines" viewName="medicines" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
+                        <NavItem icon={Receipt} label="New Bill" viewName="billing" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
+                        <NavItem icon={CalendarDays} label="Daily Sales" viewName="daily-sales" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
+                        <NavItem icon={TrendingUp} label=" Advance Sales" viewName="sales" setIsMobileMenuOpen={setIsMobileMenuOpen} />
+                        <NavItem icon={BellRing} label="Reminders" viewName="alerts" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
+                        <NavItem icon={Building} label="Agency Invoices" viewName="purchase-invoices" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
+                        <NavItem icon={ClipboardList} label="Customer Bills" viewName="customer-bills" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
+                        <NavItem icon={Wallet} label="Advances" viewName="advances" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
+                        <NavItem icon={ClipboardX} label="Shortages" viewName="shortages" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
+                        <NavItem icon={History} label="Customer History" viewName="customer-history" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
+                        <NavItem icon={Upload} label="Import CSV" viewName="import" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
                     </nav>
                 </div>
 
@@ -800,6 +810,12 @@ const InventorySystem = ({ user, onLogout }) => {
             </motion.aside>
 
             <main className="flex-grow p-6 lg:p-8 overflow-y-auto custom-scrollbar">
+                <button
+        className="md:hidden p-2 mb-4 rounded-md bg-gray-200 text-gray-800"
+        onClick={() => setIsMobileMenuOpen(true)}
+    >
+        <Menu size={24} />
+    </button>
                 {renderView()}
             </main>
         </div>
