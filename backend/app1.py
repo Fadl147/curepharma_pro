@@ -36,14 +36,12 @@ class Config:
     # Uploads folder
     UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 
-# Tell Flask that "build" is where React's static files live
-# Correctly define the path to the frontend build directory
-build_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "build"))
+build_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'build')
 
 app = Flask(
     __name__,
-    static_folder=os.path.join(build_dir, "static"), # Point to the 'static' folder inside 'build'
-    template_folder=build_dir # Point to the 'build' folder for index.html
+    static_folder=os.path.join(build_dir, 'static'),
+    template_folder=build_dir
 )
 app.config.from_object(Config)
 
