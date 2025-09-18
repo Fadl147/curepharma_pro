@@ -4,7 +4,7 @@ import { MessageSquare } from 'lucide-react'; // --- NEW: Import Icons
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Pill, LayoutDashboard, Package, LogOut, AlertTriangle, PlusCircle, Trash2, Edit, X, CalendarDays, Search, FileText, ClipboardX, Download, TrendingUp, Store ,Receipt, History, MinusCircle, DollarSign, Upload, Building, ClipboardList, Wallet, ArrowLeft,BellRing, HeartPulse, Baby, ShieldCheck, Bone, Sun, Wind } from 'lucide-react';
+import { Pill, LayoutDashboard, Package, LogOut, AlertTriangle, PlusCircle, Trash2, Edit, X, CalendarDays, Search, FileText, ClipboardX, Download, TrendingUp, Store ,Receipt, History, MinusCircle, DollarSign, Upload, Building, ClipboardList, Wallet, ArrowLeft,BellRing, HeartPulse, Baby, ShieldCheck, Bone, Sun, Wind, Menu } from 'lucide-react';
 
 // --- Axios Configuration ---
 const api = axios.create({ baseURL: '/api', withCredentials: true });
@@ -737,7 +737,7 @@ const InventorySystem = ({ user, onLogout }) => {
         <div className={`flex h-screen transition-colors duration-500 ease-in-out ${
             activeView === 'sales' ? 'bg-black text-gray-300' : 'bg-gray-50 text-gray-800'
         }`}>
-             {isMobileMenu-Open && (
+             {isMobileMenuOpen && (
             <div
                 className="fixed inset-0 bg-black/60 z-30 md:hidden"
                 onClick={() => setIsMobileMenuOpen(false)}
