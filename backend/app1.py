@@ -37,7 +37,14 @@ class Config:
     UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 
 # Tell Flask that "build" is where React's static files live
-app = Flask(__name__, static_folder="build", static_url_path="/")
+# Correctly define the path to the frontend build directory
+build_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "build"))
+
+app = Flask(
+    __name__,
+    static_folder=os.path.join(build_dir, "static"), # Point to the 'static' folder inside 'build'
+    template_folder=build_dir # Point to the 'build' folder for index.html
+)
 app.config.from_object(Config)
 
 # Ensure the upload folder exists
@@ -1206,14 +1213,13 @@ def init_db_command():
         db.create_all()
     print("✅ Initialized the database and created all tables.")
 
-@app.route('/')
-def serve_react():
-    return send_from_directory(app.static_folder, "index.html")
-
-@app.errorhandler(404)
-def not_found(e):
-    return send_from_directory(app.static_folder, "index.html")
-
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    if path != "" and os.path.exists(os.path.join(app.static_folder, '..', path)):
+        return send_from_directory(os.path.join(app.static_folder, '..'), path)
+    else:
+        return send_from_directory(app.template_folder, 'index.html')
 
 # --- RUN APP ---
 if __name__ == "__main__":
