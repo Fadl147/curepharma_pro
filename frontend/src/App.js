@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Pill, LayoutDashboard, Package, LogOut, AlertTriangle, PlusCircle, Trash2, Edit, X, CalendarDays, Search, FileText, ClipboardX, Download, TrendingUp, Store ,Receipt, History, MinusCircle, DollarSign, Upload, Building, ClipboardList, Wallet, ArrowLeft,BellRing, HeartPulse, Baby, ShieldCheck, Bone, Sun, Wind } from 'lucide-react';
 
 // --- Axios Configuration ---
-const api = axios.create({ baseURL: 'http://localhost:5001/api', withCredentials: true });
+const api = axios.create({ baseURL: '/api', withCredentials: true });
 
 // --- Reusable UI Components ---
 const Modal = ({ children, isOpen, onClose, size = '2xl' }) => (
