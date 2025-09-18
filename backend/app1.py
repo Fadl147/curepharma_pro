@@ -36,12 +36,10 @@ class Config:
     # Uploads folder
     UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 
-build_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'build')
-
 app = Flask(
     __name__,
-    static_folder=os.path.join(build_dir, 'static'),
-    template_folder=build_dir
+    static_folder="build/static",
+    template_folder="build"
 )
 app.config.from_object(Config)
 
