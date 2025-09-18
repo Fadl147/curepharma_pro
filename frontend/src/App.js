@@ -4,7 +4,7 @@ import { MessageSquare } from 'lucide-react'; // --- NEW: Import Icons
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Pill, LayoutDashboard, Package, LogOut, AlertTriangle, PlusCircle, Trash2, Edit, X, CalendarDays, Search, FileText, ClipboardX, Download, TrendingUp, Store ,Receipt, History, MinusCircle, DollarSign, Upload, Building, ClipboardList, Wallet, ArrowLeft,BellRing, HeartPulse, Baby, ShieldCheck, Bone, Sun, Wind, Menu } from 'lucide-react';
+import { Pill, LayoutDashboard, Package, LogOut, AlertTriangle, PlusCircle, Trash2, Edit, X, CalendarDays, Search, FileText, ClipboardX, Download, TrendingUp, Store ,Receipt, History, MinusCircle, DollarSign, Upload, Building, ClipboardList, Wallet, ArrowLeft,BellRing, HeartPulse, Baby, ShieldCheck, Bone, Sun, Wind,Menu } from 'lucide-react';
 
 // --- Axios Configuration ---
 const api = axios.create({ baseURL: '/api', withCredentials: true });
@@ -644,6 +644,7 @@ const InventorySystem = ({ user, onLogout }) => {
     const [billingCustomer, setBillingCustomer] = useState({ name: '', countryCode: '91', localPhone: '' });
     const [billingItems, setBillingItems] = useState([]);
     const [editingBill, setEditingBill] = useState(null);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     const handleBillCreated = () => {
         setBillingCustomer({ name: '', countryCode: '91', localPhone: '' });
