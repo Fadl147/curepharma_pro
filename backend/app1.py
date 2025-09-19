@@ -142,7 +142,12 @@ class CustomerInvoice(db.Model):
     bill_date = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Kolkata')))
     grand_total = db.Column(db.Float, nullable=False)
     payment_mode = db.Column(db.String(20), default='Cash') 
+    address = db.Column(db.Text, nullable=True)
+    pincode = db.Column(db.String(10), nullable=True)
+    latitude = db.Column(db.Float, nullable=True)
+    longitude = db.Column(db.Float, nullable=True)
     items = db.relationship('CustomerInvoiceItem', backref='invoice', lazy=True, cascade="all, delete-orphan")
+
     
 
 class CustomerInvoiceItem(db.Model):
@@ -627,6 +632,7 @@ def create_bill():
     customer_info = data.get('customer')
     items = data.get('items')
     payment_mode = data.get('paymentMode', 'Cash')
+    address_info = data.get('address')
 
     if not all([customer_info, items]):
         return jsonify({"error": "Missing customer information or items"}), 400
@@ -681,15 +687,24 @@ def create_bill():
                 gst=item_gst
             ))
         
-        new_invoice = CustomerInvoice(
-            customer_name=customer_info.get('name', 'N/A'), 
-            customer_phone=customer_info.get('phone', 'N/A'), 
-            grand_total=grand_total,
-            items=invoice_items,
-            payment_mode=payment_mode
-        )
+        invoice_data = {
+            'customer_name': customer_info.get('name', 'N/A'),
+            'customer_phone': customer_info.get('phone', 'N/A'),
+            'grand_total': grand_total,
+            'items': invoice_items,
+            'payment_mode': payment_mode,
+        }
+
+        # Safely add address info only if it exists
+        if address_info:
+            invoice_data['address'] = address_info.get('address')
+            invoice_data['pincode'] = address_info.get('pincode')
+            invoice_data['latitude'] = address_info.get('lat')
+            invoice_data['longitude'] = address_info.get('lng')
+
+        # Create the invoice from the dictionary
+        new_invoice = CustomerInvoice(**invoice_data)
         db.session.add(new_invoice)
-        db.session.flush()
 
         today = datetime.now().date()
         for item in items:

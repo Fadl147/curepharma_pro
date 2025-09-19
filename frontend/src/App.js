@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useCallback, Fragment } from 'react';
+import React, { useState, useEffect, useCallback, Fragment, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react'; // --- NEW: Import QR Code component
 import { MessageSquare } from 'lucide-react'; // --- NEW: Import Icons
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
+import curePharmaLogo from './assets/logo.png';
+import { GoogleMap, useJsApiLoader, Marker, Autocomplete } from '@react-google-maps/api';
 import { Pill, LayoutDashboard, Package, LogOut, AlertTriangle, PlusCircle, Trash2, Edit, X, CalendarDays, Search, FileText, ClipboardX, Download, TrendingUp, Store ,Receipt, History, MinusCircle, DollarSign, Upload, Building, ClipboardList, Wallet, ArrowLeft,BellRing, HeartPulse, Baby, ShieldCheck, Bone, Sun, Wind,Menu } from 'lucide-react';
 
 // --- Axios Configuration ---
@@ -160,7 +162,9 @@ const CustomerStore = ({ user, onLogout, onLoginRequest }) => {
     // --- STATE MANAGEMENT ---
     const [medicines, setMedicines] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
+    const [shippingAddress, setShippingAddress] = useState(null);
     const [cart, setCart] = useState(() => {
+        
         try {
             const savedCart = localStorage.getItem('curepharma_cart');
             return savedCart ? JSON.parse(savedCart) : [];
@@ -246,7 +250,7 @@ const CustomerStore = ({ user, onLogout, onLoginRequest }) => {
     const handleProceedToCheckout = () => {
         if (user) {
             // If the user is logged in, go to the checkout page as normal.
-            setActivePage('checkout');
+            setActivePage('address');
         } else {
             // If the user is a guest, call the onLoginRequest function
             // which opens the login modal.
@@ -266,7 +270,19 @@ case 'cart':
                 onCheckout={handleProceedToCheckout} // <-- CORRECT WAY
                 onContinueShopping={() => setActivePage('store')} 
            />;
-            case 'checkout': return <CheckoutView cart={cart} cartTotal={cartTotal} user={user} onOrderPlaced={() => { setCart([]); setActivePage('orderHistory'); }} />;
+           case 'address':
+            return <AddressView onAddressConfirm={(address) => {
+                setShippingAddress(address);
+                setActivePage('checkout'); // After confirming address, go to checkout
+            }} />;
+           case 'checkout':
+            return <CheckoutView 
+                        cart={cart} 
+                        cartTotal={cartTotal} 
+                        user={user}
+                        address={shippingAddress} // Pass the address down
+                        onOrderPlaced={() => { setCart([]); setActivePage('orderHistory'); }} 
+                    />;
             case 'orderHistory': return <OrderHistoryView onBackToStore={() => setActivePage('store')} />;
              case 'productDetail':
                 if (isDetailLoading || !selectedMedicine) {
@@ -325,12 +341,12 @@ case 'cart':
             </button>
 
                 <div className="container mx-auto px-6 py-4 flex justify-between items-center">
-                    <button onClick={() => { setActivePage('store'); setSelectedCategory(null); setSearchTerm(''); }} className="flex items-center space-x-2">
-                        <Pill className="h-10 w-10 text-blue-600" />
-                        <span className="text-3xl font-bold">
-                            <span className="text-red-600">Cure</span><span className="text-blue-600">Pharma</span>
-                        </span>
-                    </button>
+                    <button onClick={() => { setActivePage('store'); setSelectedCategory(null); setSearchTerm(''); }} className="flex items-center space-x-3">
+    <img src={curePharmaLogo} alt="CurePharma Logo" className="h-10" />
+    <span className="text-3xl font-bold">
+   <span className="text-red-600">Cure</span><span className="text-blue-600">Pharma</span>
+   </span>
+   </button>
                     <div className="hidden lg:flex flex-grow max-w-xl mx-8 relative">
                         <Input type="text" placeholder="Search for Medicines, Health Products..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setSelectedCategory(null); setActivePage('store'); }} className="w-full !p-3 !pl-12 !bg-slate-100 !shadow-inner !rounded-full"/>
                         <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -383,7 +399,184 @@ case 'cart':
     );
 };
 
+const AddressView = ({ onAddressConfirm }) => {
+    const [map, setMap] = useState(null);
+    const [markerPosition, setMarkerPosition] = useState({ lat: 17.3850, lng: 78.4867 }); // Default to Hyderabad
+    const [address, setAddress] = useState('');
+    const [pincode, setPincode] = useState('');
+    const [autocomplete, setAutocomplete] = useState(null);
+    const [geocoder, setGeocoder] = useState(null);
+    const [landmark, setLandmark] = useState('');
+    const [receiverInfo, setReceiverInfo] = useState('');
+    const [addressType, setAddressType] = useState('Home');
 
+    const { isLoaded } = useJsApiLoader({
+        id: 'google-map-script',
+        googleMapsApiKey: "AIzaSyB_qkpy4ncFzWtiZEZVocG_nSTUUoThdaE", // <-- IMPORTANT: PASTE YOUR API KEY HERE
+        libraries: ['places', 'geocoding'] // Add 'geocoding' library
+    });
+
+    // Reverse geocode when marker is moved
+    useEffect(() => {
+        if (isLoaded && markerPosition && geocoder) {
+            geocoder.geocode({ 'location': markerPosition }, (results, status) => {
+                if (status === 'OK') {
+                    if (results[0]) {
+                        setAddress(results[0].formatted_address);
+                        const pincodeComponent = results[0].address_components.find(c => c.types.includes("postal_code"));
+                        setPincode(pincodeComponent ? pincodeComponent.long_name : '');
+                    } else {
+                        console.log('No results found');
+                    }
+                } else {
+                    console.log('Geocoder failed due to: ' + status);
+                }
+            });
+        }
+    }, [markerPosition, isLoaded, geocoder]);
+
+
+    const containerStyle = useMemo(() => ({
+        width: '100%',
+        height: '200px', // Further reduced map height
+        borderRadius: '0.5rem',
+        position: 'relative' // Needed for overlay
+    }), []);
+
+    const center = useMemo(() => (markerPosition), [markerPosition]);
+
+    const onLoad = useCallback(function callback(map) {
+        setGeocoder(new window.google.maps.Geocoder());
+        setMap(map);
+    }, []);
+
+    const onUnmount = useCallback(function callback(map) {
+        setMap(null);
+    }, []);
+
+    const onPlaceChanged = () => {
+        if (autocomplete !== null) {
+            const place = autocomplete.getPlace();
+            if (place.geometry) {
+                const lat = place.geometry.location.lat();
+                const lng = place.geometry.location.lng();
+                setMarkerPosition({ lat, lng });
+                map.panTo({ lat, lng });
+            }
+        }
+    };
+
+    const handleConfirm = () => {
+        if (address && pincode) {
+            onAddressConfirm({ address, pincode, ...markerPosition });
+        } else {
+            alert("Please select a valid address and pincode.");
+        }
+    };
+    
+    const handleUseCurrentLocation = () => {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition((position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                setMarkerPosition({ lat, lng });
+                if(map) map.panTo({ lat, lng });
+            });
+        } else {
+            alert("Geolocation is not supported by this browser.");
+        }
+    };
+
+    if (!isLoaded) return <div>Loading Map...</div>;
+
+   return (
+        <div className="bg-white p-4 md:p-6 rounded-2xl shadow-xl max-w-lg mx-auto">
+            <h1 className="text-xl md:text-2xl font-bold mb-4">Enter Your Delivery Address</h1>
+
+            <div style={containerStyle}>
+                <GoogleMap
+                    mapContainerStyle={{ width: '100%', height: '100%', borderRadius: '0.5rem' }}
+                    center={center}
+                    zoom={15}
+                    onLoad={onLoad}
+                    onUnmount={onUnmount}
+                    options={{ streetViewControl: false, mapTypeControl: false, fullscreenControl: false }}
+                >
+                    <Marker
+                        position={markerPosition}
+                        draggable={true}
+                        onDragEnd={(e) => setMarkerPosition({ lat: e.latLng.lat(), lng: e.latLng.lng() })}
+                    />
+                </GoogleMap>
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs px-2 py-1 rounded-full pointer-events-none">
+                    Drag the pin to set your location
+                </div>
+            </div>
+
+            <div className="space-y-3 mt-4">
+                <Autocomplete
+                    onLoad={(ac) => setAutocomplete(ac)}
+                    onPlaceChanged={onPlaceChanged}
+                >
+                    <Input
+                        type="text"
+                        placeholder="Search or drag the pin on the map"
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
+                    />
+                </Autocomplete>
+
+                {/* NEW: Added new input fields */}
+                <Input
+                    type="text"
+                    placeholder="Landmark, Building Name, Flat No."
+                    value={landmark}
+                    onChange={(e) => setLandmark(e.target.value)}
+                />
+                <div className="flex items-center gap-3">
+                    <Input
+                        type="text"
+                        placeholder="Pincode"
+                        value={pincode}
+                        onChange={(e) => setPincode(e.target.value)}
+                        readOnly
+                        className="flex-grow"
+                    />
+                    <Button onClick={handleUseCurrentLocation} variant="secondary" className="!px-3 !py-2.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L7 22 12 17 17 22 12 2z" /></svg>
+                    </Button>
+                </div>
+                <Input
+                    type="text"
+                    placeholder="Receiver's Name & Phone Number"
+                    value={receiverInfo}
+                    onChange={(e) => setReceiverInfo(e.target.value)}
+                />
+                {/* NEW: Added address type buttons */}
+                <div className="flex items-center space-x-2">
+                    <p className="text-sm font-medium text-gray-600">Save as:</p>
+                    {['Home', 'Work', 'Other'].map((type) => (
+                        <button
+                            key={type}
+                            onClick={() => setAddressType(type)}
+                            className={`px-3 py-1.5 text-sm rounded-full transition-colors ${
+                                addressType === type
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                            }`}
+                        >
+                            {type}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <Button onClick={handleConfirm} className="w-full mt-6 !py-3 !text-base md:!text-lg">
+                Confirm & Proceed
+            </Button>
+        </div>
+    );
+};
 // --- SUB-COMPONENTS for the new design ---
 
 const StoreView = ({ medicines, onAddToCart, isLoading, onCategorySelect, selectedCategory, clearCategory, onProductSelect }) => (
@@ -604,19 +797,32 @@ const OrderHistoryView = ({ onBackToStore }) => {
     );
 };
 
-const CheckoutView = ({ cart, cartTotal, user, onOrderPlaced }) => {
+const CheckoutView = ({ cart, cartTotal, user, onOrderPlaced, address }) => {
     const [isPlacingOrder, setIsPlacingOrder] = useState(false);
     if (!user || cart.length === 0) {
         // You can optionally return a message, but returning null is clean.
         // The main CustomerStore logic will prevent users from getting here anyway.
-        return null; 
+        return(
+        // ... in your JSX
+        <div className="border-b pb-4 mb-6">
+            <h3 className="font-semibold text-lg">Shipping to:</h3>
+            <p className="text-gray-600">{user.name} ({user.phone})</p>
+            <p className="text-gray-500 mt-2">{address?.address}, {address?.pincode}</p> {/* Display address */}
+        </div>
+        // ...
+    ); 
     }
     const handlePlaceOrder = async () => {
         setIsPlacingOrder(true);
         const customerDetails = { name: user.name, phone: user.phone };
         const orderItems = cart.map(item => ({ id: item.id, name: item.name, quantity: item.quantity, mrp: item.mrp, discount: 0, isManual: false }));
         try {
-            const res = await api.post('/billing', { customer: customerDetails, items: orderItems, paymentMode: 'COD' });
+          const res = await api.post('/billing', {
+                customer: customerDetails,
+                items: orderItems,
+                paymentMode: 'COD',
+                address: address // <-- ADD THIS LINE
+            });
             alert('Your order has been placed successfully!');
             onOrderPlaced(res.data);
         } catch(err) {
@@ -624,6 +830,7 @@ const CheckoutView = ({ cart, cartTotal, user, onOrderPlaced }) => {
         } finally { setIsPlacingOrder(false); }
     };
     return (
+        
         <div className="bg-white p-8 rounded-2xl shadow-xl max-w-2xl mx-auto">
             <h1 className="text-3xl font-bold mb-6">Confirm Your Order</h1>
             <div className="border-b pb-4 mb-6"><h3 className="font-semibold text-lg">Shipping to:</h3><p className="text-gray-600">{user.name} ({user.phone})</p></div>
@@ -634,6 +841,7 @@ const CheckoutView = ({ cart, cartTotal, user, onOrderPlaced }) => {
                 {isPlacingOrder ? 'Placing Order...' : 'Confirm & Place Order (Cash on Delivery)'}
             </Button>
         </div>
+        
     );
 };
 
