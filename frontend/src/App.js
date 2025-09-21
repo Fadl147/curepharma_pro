@@ -6,7 +6,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { motion, AnimatePresence } from 'framer-motion';
 import curePharmaLogo from './assets/logo.png';
 import { GoogleMap, useJsApiLoader, Marker, Autocomplete } from '@react-google-maps/api';
-import { Pill, LayoutDashboard, Package, LogOut, AlertTriangle, PlusCircle, Trash2, Edit, X, CalendarDays, Search, FileText, ClipboardX, Download, TrendingUp, Store ,Receipt, History, MinusCircle, DollarSign, Upload, Building, ClipboardList, Wallet, ArrowLeft,BellRing, HeartPulse, Baby, ShieldCheck, Bone, Sun, Wind,Menu } from 'lucide-react';
+import { Pill, LayoutDashboard, Package, LogOut, AlertTriangle, PlusCircle, Trash2, Edit, X, CalendarDays, Search, FileText, ClipboardX, Download, TrendingUp, Store ,Receipt, History, MinusCircle, DollarSign, Upload, Building, ClipboardList, Wallet, ArrowLeft,BellRing, HeartPulse, Baby, ShieldCheck, Bone, Sun, Wind,Menu, CreditCard, Star } from 'lucide-react';
 
 // --- Axios Configuration ---
 const api = axios.create({ baseURL: '/api', withCredentials: true });
@@ -270,11 +270,24 @@ case 'cart':
                 onCheckout={handleProceedToCheckout} // <-- CORRECT WAY
                 onContinueShopping={() => setActivePage('store')} 
            />;
+           
            case 'address':
             return <AddressView onAddressConfirm={(address) => {
                 setShippingAddress(address);
-                setActivePage('checkout'); // After confirming address, go to checkout
+                setActivePage('payment'); // After confirming address, go to payment
             }} />;
+
+ case 'payment':
+                return <PaymentView
+                    cartTotal={cartTotal}
+                    onPaymentSelect={(method) => {
+                        // For now, we just log the method and proceed.
+                        // Later, you'll add UPI logic here.
+                        console.log("Selected payment method:", method);
+                        setActivePage('checkout');
+                    }}
+                />;
+
            case 'checkout':
             return <CheckoutView 
                         cart={cart} 
@@ -400,8 +413,9 @@ case 'cart':
 };
 
 const AddressView = ({ onAddressConfirm }) => {
+    // --- STATE MANAGEMENT ---
     const [map, setMap] = useState(null);
-    const [markerPosition, setMarkerPosition] = useState({ lat: 17.3850, lng: 78.4867 }); // Default to Hyderabad
+    const [markerPosition, setMarkerPosition] = useState({ lat: 17.3850, lng: 78.4867 }); // Hyderabad default
     const [address, setAddress] = useState('');
     const [pincode, setPincode] = useState('');
     const [autocomplete, setAutocomplete] = useState(null);
@@ -409,50 +423,67 @@ const AddressView = ({ onAddressConfirm }) => {
     const [landmark, setLandmark] = useState('');
     const [receiverInfo, setReceiverInfo] = useState('');
     const [addressType, setAddressType] = useState('Home');
+    const [pincodeStatus, setPincodeStatus] = useState({ type: '', message: '' });
+
+    // --- CONSTANTS & CONFIG ---
+    const serviceablePincodes = useMemo(() => ['500008', '500034', '500033', '500096', '500019', '500036', '500002', '500024', '500086', '500028', '500048','500046'], []);
+    const hyderabadBounds = useMemo(() => ({ north: 17.5, south: 17.2, east: 78.6, west: 78.3 }), []);
 
     const { isLoaded } = useJsApiLoader({
         id: 'google-map-script',
-        googleMapsApiKey: "AIzaSyB_qkpy4ncFzWtiZEZVocG_nSTUUoThdaE", // <-- IMPORTANT: PASTE YOUR API KEY HERE
-        libraries: ['places', 'geocoding'] // Add 'geocoding' library
+        googleMapsApiKey: "AIzaSyB_qkpy4ncFzWtiZEZVocG_nSTUUoThdaE", // PASTE YOUR API KEY HERE
+        libraries: ['places', 'geocoding']
     });
 
-    // Reverse geocode when marker is moved
+    const checkPincode = useCallback((code) => {
+        if (!code) {
+            setPincodeStatus({ type: '', message: '' });
+            return;
+        }
+        if (serviceablePincodes.includes(code)) {
+            setPincodeStatus({ type: 'success', message: 'Congrats! We deliver here.' });
+        } else {
+            setPincodeStatus({ type: 'error', message: 'Sorry, we do not currently deliver to this pincode.' });
+        }
+    }, [serviceablePincodes]);
+    
+    // --- LOGIC HOOKS ---
+    useEffect(() => {
+        if (isLoaded && map) {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition((position) => {
+                    const currentLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
+                    setMarkerPosition(currentLocation);
+                    map.panTo(currentLocation);
+                }, (error) => {
+                    console.error("Error getting user location:", error);
+                });
+            }
+        }
+    }, [isLoaded, map]);
+
     useEffect(() => {
         if (isLoaded && markerPosition && geocoder) {
             geocoder.geocode({ 'location': markerPosition }, (results, status) => {
-                if (status === 'OK') {
-                    if (results[0]) {
-                        setAddress(results[0].formatted_address);
-                        const pincodeComponent = results[0].address_components.find(c => c.types.includes("postal_code"));
-                        setPincode(pincodeComponent ? pincodeComponent.long_name : '');
-                    } else {
-                        console.log('No results found');
-                    }
-                } else {
-                    console.log('Geocoder failed due to: ' + status);
+                if (status === 'OK' && results[0]) {
+                    setAddress(results[0].formatted_address);
+                    const pincodeComponent = results[0].address_components.find(c => c.types.includes("postal_code"));
+                    const foundPincode = pincodeComponent ? pincodeComponent.long_name : '';
+                    setPincode(foundPincode);
+                    checkPincode(foundPincode);
                 }
             });
         }
-    }, [markerPosition, isLoaded, geocoder]);
+    }, [markerPosition, isLoaded, geocoder, checkPincode]);
 
+    const containerStyle = useMemo(() => ({ width: '100%', height: '200px', borderRadius: '0.5rem', position: 'relative' }), []);
 
-    const containerStyle = useMemo(() => ({
-        width: '100%',
-        height: '200px', // Further reduced map height
-        borderRadius: '0.5rem',
-        position: 'relative' // Needed for overlay
-    }), []);
-
-    const center = useMemo(() => (markerPosition), [markerPosition]);
-
-    const onLoad = useCallback(function callback(map) {
+    const onLoad = useCallback(map => {
         setGeocoder(new window.google.maps.Geocoder());
         setMap(map);
     }, []);
 
-    const onUnmount = useCallback(function callback(map) {
-        setMap(null);
-    }, []);
+    const onUnmount = useCallback(map => setMap(null), []);
 
     const onPlaceChanged = () => {
         if (autocomplete !== null) {
@@ -467,112 +498,113 @@ const AddressView = ({ onAddressConfirm }) => {
     };
 
     const handleConfirm = () => {
-        if (address && pincode) {
-            onAddressConfirm({ address, pincode, ...markerPosition });
-        } else {
-            alert("Please select a valid address and pincode.");
+        if (!address || !pincode) {
+            alert("Please select a valid address.");
+            return;
         }
-    };
-    
-    const handleUseCurrentLocation = () => {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition((position) => {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-                setMarkerPosition({ lat, lng });
-                if(map) map.panTo({ lat, lng });
-            });
-        } else {
-            alert("Geolocation is not supported by this browser.");
+        if (pincodeStatus.type === 'error') {
+            alert(pincodeStatus.message);
+            return;
         }
+        onAddressConfirm({ address, pincode, landmark, receiverInfo, addressType, ...markerPosition });
     };
 
     if (!isLoaded) return <div>Loading Map...</div>;
 
-   return (
+    return (
         <div className="bg-white p-4 md:p-6 rounded-2xl shadow-xl max-w-lg mx-auto">
             <h1 className="text-xl md:text-2xl font-bold mb-4">Enter Your Delivery Address</h1>
 
             <div style={containerStyle}>
                 <GoogleMap
                     mapContainerStyle={{ width: '100%', height: '100%', borderRadius: '0.5rem' }}
-                    center={center}
+                    center={markerPosition}
                     zoom={15}
                     onLoad={onLoad}
                     onUnmount={onUnmount}
-                    options={{ streetViewControl: false, mapTypeControl: false, fullscreenControl: false }}
+                    options={{ streetViewControl: false, mapTypeControl: false, fullscreenControl: false, restriction: { latLngBounds: hyderabadBounds, strictBounds: false } }}
                 >
-                    <Marker
-                        position={markerPosition}
-                        draggable={true}
-                        onDragEnd={(e) => setMarkerPosition({ lat: e.latLng.lat(), lng: e.latLng.lng() })}
-                    />
+                    <Marker position={markerPosition} draggable={true} onDragEnd={(e) => setMarkerPosition({ lat: e.latLng.lat(), lng: e.latLng.lng() })} />
                 </GoogleMap>
                 <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs px-2 py-1 rounded-full pointer-events-none">
-                    Drag the pin to set your location
+                    Drag the pin to refine location
                 </div>
             </div>
 
             <div className="space-y-3 mt-4">
-                <Autocomplete
-                    onLoad={(ac) => setAutocomplete(ac)}
-                    onPlaceChanged={onPlaceChanged}
-                >
-                    <Input
-                        type="text"
-                        placeholder="Search or drag the pin on the map"
-                        value={address}
-                        onChange={(e) => setAddress(e.target.value)}
-                    />
+                <Autocomplete onLoad={(ac) => setAutocomplete(ac)} onPlaceChanged={onPlaceChanged} options={{ bounds: hyderabadBounds, componentRestrictions: { country: "in" }, strictBounds: false }}>
+                    <Input type="text" placeholder="Search for your address in Hyderabad" value={address} onChange={(e) => setAddress(e.target.value)} />
                 </Autocomplete>
-
-                {/* NEW: Added new input fields */}
-                <Input
-                    type="text"
-                    placeholder="Landmark, Building Name, Flat No."
-                    value={landmark}
-                    onChange={(e) => setLandmark(e.target.value)}
-                />
+                <Input type="text" placeholder="Landmark, Building Name, Flat No." value={landmark} onChange={(e) => setLandmark(e.target.value)} />
                 <div className="flex items-center gap-3">
-                    <Input
-                        type="text"
-                        placeholder="Pincode"
-                        value={pincode}
-                        onChange={(e) => setPincode(e.target.value)}
-                        readOnly
-                        className="flex-grow"
-                    />
-                    <Button onClick={handleUseCurrentLocation} variant="secondary" className="!px-3 !py-2.5">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L7 22 12 17 17 22 12 2z" /></svg>
-                    </Button>
+                    <Input type="text" placeholder="Pincode" value={pincode} readOnly className="flex-grow" />
                 </div>
-                <Input
-                    type="text"
-                    placeholder="Receiver's Name & Phone Number"
-                    value={receiverInfo}
-                    onChange={(e) => setReceiverInfo(e.target.value)}
-                />
-                {/* NEW: Added address type buttons */}
+                {pincodeStatus.message && (
+                    <p className={`text-sm font-semibold -mt-2 ${pincodeStatus.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{pincodeStatus.message}</p>
+                )}
+                <Input type="text" placeholder="Receiver's Name & Phone Number" value={receiverInfo} onChange={(e) => setReceiverInfo(e.target.value)} />
                 <div className="flex items-center space-x-2">
                     <p className="text-sm font-medium text-gray-600">Save as:</p>
-                    {['Home', 'Work', 'Other'].map((type) => (
-                        <button
-                            key={type}
-                            onClick={() => setAddressType(type)}
-                            className={`px-3 py-1.5 text-sm rounded-full transition-colors ${
-                                addressType === type
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                            }`}
-                        >
+                    {['Home', 'Work', 'Other'].map(type => (
+                        <button key={type} onClick={() => setAddressType(type)} className={`px-3 py-1.5 text-sm rounded-full transition-colors ${addressType === type ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>
                             {type}
                         </button>
                     ))}
                 </div>
             </div>
-
             <Button onClick={handleConfirm} className="w-full mt-6 !py-3 !text-base md:!text-lg">
-                Confirm & Proceed
+                Proceed to Payment
+            </Button>
+        </div>
+    );
+};
+
+
+const PaymentView = ({ cartTotal, onPaymentSelect }) => {
+    const [selectedMethod, setSelectedMethod] = useState('COD');
+
+    const paymentOptions = [
+        { id: 'COD', title: 'Cash on Delivery', description: 'Pay with cash at your doorstep.', icon: Wallet },
+        { id: 'UPI', title: 'UPI', description: 'Pay with any UPI app.', icon: CreditCard },
+        { id: 'Credits', title: 'CurePharma Credits', description: 'Feature coming soon.', icon: Star, disabled: true }
+    ];
+
+    const handleProceed = () => {
+        onPaymentSelect(selectedMethod);
+    };
+
+    return (
+        <div className="bg-white p-4 md:p-6 rounded-2xl shadow-xl max-w-lg mx-auto">
+            <h1 className="text-xl md:text-2xl font-bold mb-4">Choose a Payment Method</h1>
+
+            <div className="space-y-3">
+                {paymentOptions.map(option => (
+                    <button
+                        key={option.id}
+                        onClick={() => !option.disabled && setSelectedMethod(option.id)}
+                        disabled={option.disabled}
+                        className={`w-full flex items-center text-left p-4 rounded-lg border-2 transition-all ${
+                            selectedMethod === option.id
+                                ? 'border-blue-600 bg-blue-50'
+                                : 'border-gray-200 hover:bg-gray-50'
+                        } ${option.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                        <option.icon className={`h-6 w-6 mr-4 ${selectedMethod === option.id ? 'text-blue-600' : 'text-gray-500'}`} />
+                        <div>
+                            <p className="font-semibold text-gray-800">{option.title}</p>
+                            <p className="text-sm text-gray-500">{option.description}</p>
+                        </div>
+                    </button>
+                ))}
+            </div>
+            
+            <div className="mt-6 pt-4 border-t border-dashed flex justify-between items-center">
+                <p className="text-gray-600">Amount to Pay:</p>
+                <p className="text-2xl font-bold text-gray-900">₹{cartTotal.toFixed(2)}</p>
+            </div>
+
+            <Button onClick={handleProceed} className="w-full mt-4 !py-3 !text-base md:!text-lg">
+                {selectedMethod === 'COD' ? 'Confirm Order' : `Pay ₹${cartTotal.toFixed(2)}`}
             </Button>
         </div>
     );
