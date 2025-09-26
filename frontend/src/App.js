@@ -6,7 +6,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { motion, AnimatePresence } from 'framer-motion';
 import curePharmaLogo from './assets/logo.png';
 import { GoogleMap, useJsApiLoader, Marker, Autocomplete } from '@react-google-maps/api';
-import { Pill, LayoutDashboard, Package, LogOut, AlertTriangle, PlusCircle, Trash2, Edit, X, CalendarDays, Search, FileText, ClipboardX, Download, TrendingUp, Store ,Receipt, History, MinusCircle, DollarSign, Upload, Building, ClipboardList, Wallet, ArrowLeft,BellRing, HeartPulse, Baby, ShieldCheck, Bone, Sun, Wind,Menu, CreditCard, Star } from 'lucide-react';
+import { Pill, LayoutDashboard, Package, LogOut, AlertTriangle, PlusCircle,Edit, X, CalendarDays,CheckCircle2, Search, FileText, ClipboardX, Download, TrendingUp, Store ,Receipt, History, MinusCircle, DollarSign, Upload, Building, ClipboardList, Wallet, ArrowLeft,BellRing, HeartPulse, Baby, ShieldCheck, Bone, Sun, Wind,Menu, CreditCard, Star, ShoppingBag, Trash2 } from 'lucide-react';
 
 // --- Axios Configuration ---
 const api = axios.create({ baseURL: '/api', withCredentials: true });
@@ -163,6 +163,7 @@ const CustomerStore = ({ user, onLogout, onLoginRequest }) => {
     const [medicines, setMedicines] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [shippingAddress, setShippingAddress] = useState(null);
+    const [pendingInvoiceId, setPendingInvoiceId] = useState(null);
     const [cart, setCart] = useState(() => {
         
         try {
@@ -288,14 +289,34 @@ case 'cart':
                     }}
                 />;
 
-           case 'checkout':
-            return <CheckoutView 
-                        cart={cart} 
-                        cartTotal={cartTotal} 
-                        user={user}
-                        address={shippingAddress} // Pass the address down
-                        onOrderPlaced={() => { setCart([]); setActivePage('orderHistory'); }} 
-                    />;
+        case 'checkout':
+    // --- THIS IS THE FIX ---
+    // We add a check here. Only render the CheckoutView if the cart
+    // actually has items in it. Otherwise, show a loading message.
+    return cart.length > 0 ? (
+        <CheckoutView 
+            cart={cart} 
+            cartTotal={cartTotal} 
+            user={user}
+            address={shippingAddress}
+            onOrderPlaced={(invoiceId) => { 
+                setCart([]);
+                sessionStorage.setItem('pendingInvoiceId', invoiceId);
+                setActivePage('order-pending');
+            }} 
+        />
+    ) : (
+        <div className="text-center p-8">
+            <p className="text-gray-500">Loading your cart...</p>
+        </div>
+    );
+
+                       case 'order-pending':
+                // Pass the stored ID as a prop
+                return <OrderPendingView invoiceId={pendingInvoiceId}
+                 onBackToStore={() => setActivePage('store')}
+                onViewOrders={() => setActivePage('orderHistory')} />;
+                
             case 'orderHistory': return <OrderHistoryView onBackToStore={() => setActivePage('store')} />;
              case 'productDetail':
                 if (isDetailLoading || !selectedMedicine) {
@@ -609,6 +630,168 @@ const PaymentView = ({ cartTotal, onPaymentSelect }) => {
         </div>
     );
 };
+
+const OrderPendingView = ({ invoiceId, onBackToStore, onViewOrders }) => {
+    const [status, setStatus] = useState('Pending');
+
+   
+    // This polling effect now waits for the invoiceId to be set.
+    useEffect(() => {
+        if (!invoiceId) return; // This check is still important.
+
+        const interval = setInterval(() => {
+            api.get(`/order-status/${invoiceId}`)
+                .then(res => {
+                    const newStatus = res.data.status;
+                    if (newStatus !== 'Pending') {
+                        setStatus(newStatus);
+                        clearInterval(interval);
+                    }
+                })
+                .catch(err => {
+                    console.error("Error checking order status:", err);
+                    clearInterval(interval);
+                });
+        }, 5000);
+
+        return () => clearInterval(interval);
+    }, [invoiceId]); // This effect now runs whenever the invoiceId state changes.
+
+    // --- NEW: This is the view for an approved order ---
+   if (status === 'Approved') {
+        return (
+            <div className="bg-white p-8 rounded-2xl shadow-xl max-w-lg mx-auto text-center">
+                <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-6" />
+                <h1 className="text-2xl font-bold mb-4 text-gray-800">Order Confirmed!</h1>
+                <p className="text-gray-600">Your order has been approved and is being prepared for delivery.</p>
+                <Button onClick={onViewOrders} className="mt-6">
+                    View My Orders
+                </Button>
+            </div>
+        );
+    }
+
+    if (status === 'Rejected') {
+        return (
+            <div className="bg-white p-8 rounded-2xl shadow-xl max-w-lg mx-auto text-center">
+                <div className="text-7xl mb-6">😞</div>
+                <h1 className="text-2xl font-bold mb-4 text-red-600">Sorry, your order can't be placed.</h1>
+                <p className="text-gray-600">There was an issue processing your order. Please contact the pharmacy for more details.</p>
+                <Button onClick={onBackToStore} className="mt-6">
+                    <ArrowLeft size={20} />
+                    <span>Back to Store</span>
+                </Button>
+            </div>
+        );
+    }
+    
+    // Default "Pending" view
+    return (
+        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-lg mx-auto text-center">
+            <div className="w-16 h-16 border-4 border-dashed rounded-full animate-spin border-blue-600 mx-auto mb-6"></div>
+            <h1 className="text-2xl font-bold mb-4 text-gray-800">Please Wait</h1>
+            <p className="text-gray-600">Your order is being confirmed by the pharmacy. This page will update automatically.</p>
+            <Button onClick={onBackToStore} variant="secondary" className="mt-6">
+                Go Back to Store
+            </Button>
+        </div>
+    );
+};
+
+// NEW: The page for the admin to view and approve online orders
+const OnlineOrdersView = () => {
+    const [orders, setOrders] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+     // ADD THIS FUNCTION for rejecting orders
+    const handleReject = async (orderId) => {
+        if (!window.confirm('Are you sure you want to reject this order?')) return;
+        try {
+            await api.put(`/orders/${orderId}/reject`);
+            alert('Order rejected!');
+            fetchOrders(); // Refresh the list
+        } catch (error) {
+            alert(`Failed to reject order: ${error.response?.data?.error || 'Server error'}`);
+        }
+    };
+
+    // ADD THIS FUNCTION for deleting orders
+    const handleDelete = async (orderId) => {
+        if (!window.confirm('Are you sure you want to permanently delete this order?')) return;
+        try {
+            await api.delete(`/orders/${orderId}/delete`);
+            alert('Order deleted successfully!');
+            fetchOrders(); // Refresh the list
+        } catch (error) {
+            alert(`Failed to delete order: ${error.response?.data?.error || 'Server error'}`);
+        }
+    };
+
+    const fetchOrders = useCallback(() => {
+        setIsLoading(true);
+        api.get('/online-orders')
+           .then(res => setOrders(res.data))
+           .finally(() => setIsLoading(false));
+    }, []);
+
+    useEffect(fetchOrders, [fetchOrders]);
+
+    const handleApprove = async (orderId) => {
+        if (!window.confirm('Are you sure you want to approve this order? This will deduct stock from inventory.')) return;
+        try {
+            await api.put(`/orders/${orderId}/approve`);
+            alert('Order approved successfully!');
+            fetchOrders(); // Refresh the list
+        } catch (error) {
+            alert(`Failed to approve order: ${error.response?.data?.error || 'Server error'}`);
+        }
+    };
+
+    if (isLoading) return <p>Loading online orders...</p>;
+
+    return (
+        <div>
+            <h1 className="text-3xl font-bold mb-6">Online Orders</h1>
+            <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border space-y-4">
+                {orders.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8">No pending online orders found.</p>
+                ) : orders.map(order => (
+                    <div key={order.id} className="border rounded-lg p-4 transition-shadow hover:shadow-md">
+                        <div className="flex flex-col sm:flex-row justify-between sm:items-center">
+                            <div>
+                                <p className="font-bold">{order.customer_name} - ₹{order.grand_total.toFixed(2)}</p>
+                                <p className="text-sm text-gray-500">{order.bill_date}</p>
+                            </div>
+                            <div className="flex items-center space-x-2 mt-2 sm:mt-0">
+                                <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                                    order.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
+                                    order.status === 'Approved' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                }`}>{order.status}</span>
+                                {order.status === 'Pending' && ( <>
+                                    <Button onClick={() => handleApprove(order.id)} className="!py-1 !px-3">Approve</Button>
+                                     <Button onClick={() => handleReject(order.id)} variant="secondary" className="!py-1 !px-3 !bg-orange-100 !text-orange-700 hover:!bg-orange-200">
+                Reject
+            </Button>
+        </>                                
+                                )}
+                                 <Button onClick={() => handleDelete(order.id)} variant="secondary" className="!py-1 !px-2 !bg-red-100 !text-red-700 hover:!bg-red-200">
+        <Trash2 size={16} />
+    </Button>
+                            </div>
+                        </div>
+                        <div className="mt-3 border-t pt-3">
+                             <p className="text-sm font-semibold mb-1">Items:</p>
+                             <ul className="list-disc list-inside text-sm text-gray-600">
+                                {order.items.map((item, index) => <li key={index}>{item.medicine_name} (x{item.quantity})</li>)}
+                             </ul>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 // --- SUB-COMPONENTS for the new design ---
 
 const StoreView = ({ medicines, onAddToCart, isLoading, onCategorySelect, selectedCategory, clearCategory, onProductSelect }) => (
@@ -831,35 +1014,33 @@ const OrderHistoryView = ({ onBackToStore }) => {
 
 const CheckoutView = ({ cart, cartTotal, user, onOrderPlaced, address }) => {
     const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+     // If there is no user or the cart is empty, don't try to render anything.
+    // This prevents the component from crashing.
     if (!user || cart.length === 0) {
-        // You can optionally return a message, but returning null is clean.
-        // The main CustomerStore logic will prevent users from getting here anyway.
-        return(
-        // ... in your JSX
-        <div className="border-b pb-4 mb-6">
-            <h3 className="font-semibold text-lg">Shipping to:</h3>
-            <p className="text-gray-600">{user.name} ({user.phone})</p>
-            <p className="text-gray-500 mt-2">{address?.address}, {address?.pincode}</p> {/* Display address */}
-        </div>
-        // ...
-    ); 
+        return (
+            <div className="text-center p-8">
+                <p className="text-gray-500">There is nothing to check out.</p>
+            </div>
+        );
     }
-    const handlePlaceOrder = async () => {
+   const handlePlaceOrder = async () => {
         setIsPlacingOrder(true);
         const customerDetails = { name: user.name, phone: user.phone };
         const orderItems = cart.map(item => ({ id: item.id, name: item.name, quantity: item.quantity, mrp: item.mrp, discount: 0, isManual: false }));
         try {
-          const res = await api.post('/billing', {
+          // UPDATE THIS API CALL from '/billing' to '/submit-order'
+          const res = await api.post('/submit-order', {
                 customer: customerDetails,
                 items: orderItems,
-                paymentMode: 'COD',
-                address: address // <-- ADD THIS LINE
+                paymentMode: 'COD', // Assuming COD for now, update if you pass payment method
+                address: address
             });
-            alert('Your order has been placed successfully!');
-            onOrderPlaced(res.data);
+             onOrderPlaced(res.data.invoiceId);
         } catch(err) {
-            alert('Could not place order. Please try again.');
-        } finally { setIsPlacingOrder(false); }
+            alert('Could not submit order. Please try again.');
+            setIsPlacingOrder(false); // Make sure to re-enable button on error
+        }
+        // No finally needed, as we navigate away on success
     };
     return (
         
@@ -885,6 +1066,27 @@ const InventorySystem = ({ user, onLogout }) => {
     const [billingItems, setBillingItems] = useState([]);
     const [editingBill, setEditingBill] = useState(null);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [showNewOrderPopup, setShowNewOrderPopup] = useState(false);
+    const [lastPendingCount, setLastPendingCount] = useState(0);
+
+    // ADD THIS useEffect TO CHECK FOR NEW ORDERS every 15 seconds
+    useEffect(() => {
+        // Initial check
+        api.get('/pending-orders/check').then(res => setLastPendingCount(res.data.pending_count));
+
+        const interval = setInterval(() => {
+            api.get('/pending-orders/check').then(res => {
+                const newCount = res.data.pending_count;
+                if (newCount > 0 && newCount > lastPendingCount) {
+                    setShowNewOrderPopup(true); // Show pop-up if new orders have arrived
+                }
+                setLastPendingCount(newCount);
+            });
+        }, 15000); // Check every 15 seconds
+
+        return () => clearInterval(interval); // Cleanup on component unmount
+    }, [lastPendingCount]);
+
 
     const handleBillCreated = () => {
         setBillingCustomer({ name: '', countryCode: '91', localPhone: '' });
@@ -961,6 +1163,7 @@ const InventorySystem = ({ user, onLogout }) => {
             case 'medicines': return <MedicinesView />;
             case 'billing': return <BillingView customer={billingCustomer} setCustomer={setBillingCustomer} items={billingItems} setItems={setBillingItems} onBillCreated={handleBillCreated} editingBill={editingBill} />;
             case 'sales': return <SalesView />;
+            case 'online-orders': return <OnlineOrdersView />;
             case 'alerts': return <AlertsView />;
             case 'purchase-invoices': return <PurchaseInvoiceView />;
             case 'customer-bills': return <CustomerBillsView onEditBill={handleEditBill} />;
@@ -984,6 +1187,17 @@ const InventorySystem = ({ user, onLogout }) => {
                 onClick={() => setIsMobileMenuOpen(false)}
             ></div>
         )}
+
+        <Modal isOpen={showNewOrderPopup} onClose={() => setShowNewOrderPopup(false)} size="sm">
+                <div className="p-6 text-center">
+                    <h2 className="text-2xl font-bold">New Online Order!</h2>
+                    <p className="text-gray-600 my-4">A new online order has been submitted and is awaiting your approval.</p>
+                    <Button onClick={() => {
+                        setActiveView('online-orders'); // Go to the online orders page
+                        setShowNewOrderPopup(false);
+                    }}>View Orders</Button>
+                </div>
+            </Modal>
             <motion.aside
                 className={`fixed inset-y-0 left-0 z-40 p-4 flex flex-col shrink-0 shadow-lg transition-transform duration-300 ease-in-out md:static md:translate-x-0 ${
                     activeView === 'sales' ? 'bg-gray-900 border-r border-gray-800' : 'bg-blue-600'
@@ -1015,6 +1229,7 @@ const InventorySystem = ({ user, onLogout }) => {
                         <NavItem icon={LayoutDashboard} label="Dashboard" viewName="dashboard" setIsMobileMenuOpen={setIsMobileMenuOpen} />
                         <NavItem icon={Package} label="Medicines" viewName="medicines" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
                         <NavItem icon={Receipt} label="New Bill" viewName="billing" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
+                        <NavItem icon={ShoppingBag} label="Online Orders" viewName="online-orders" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
                         <NavItem icon={CalendarDays} label="Daily Sales" viewName="daily-sales" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
                         <NavItem icon={TrendingUp} label=" Advance Sales" viewName="sales" setIsMobileMenuOpen={setIsMobileMenuOpen} />
                         <NavItem icon={BellRing} label="Reminders" viewName="alerts" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
@@ -2195,7 +2410,7 @@ const AdvanceForm = ({ onSave, onCancel }) => {
 };
 
 
-// --- NEW: Daily Sales View Component ---
+// --- UPDATED: Daily Sales View Component ---
 const DailySalesView = () => {
     const [summary, setSummary] = useState([]);
     const [details, setDetails] = useState([]);
@@ -2229,7 +2444,16 @@ const DailySalesView = () => {
                             {details.map(invoice => (
                                 <div key={invoice.id} className="border rounded-lg p-4">
                                     <div className="flex justify-between font-semibold">
-                                        <span>Invoice #{invoice.id} - {invoice.customer_name}</span>
+                                        {/* --- THIS IS THE UPDATED SECTION --- */}
+                                        <span className="flex items-center">
+                                            Invoice #{invoice.id} - {invoice.customer_name}
+                                            {/* This line conditionally renders the "Online" tag */}
+                                            {invoice.order_type === 'Online' && (
+                                                <span className="ml-2 text-xs font-semibold bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                                                    Online
+                                                </span>
+                                            )}
+                                        </span>
                                         <span>₹{invoice.grand_total.toFixed(2)}</span>
                                     </div>
                                     <ul className="list-disc list-inside text-sm text-gray-600 mt-2">

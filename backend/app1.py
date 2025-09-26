@@ -146,6 +146,8 @@ class CustomerInvoice(db.Model):
     pincode = db.Column(db.String(10), nullable=True)
     latitude = db.Column(db.Float, nullable=True)
     longitude = db.Column(db.Float, nullable=True)
+    order_type = db.Column(db.String(20), nullable=False, default='In-Store') # Values: 'In-Store', 'Online'
+    status = db.Column(db.String(20), nullable=False, default='Approved') # Values: 'Pending', 'Approved', 'Rejected'
     items = db.relationship('CustomerInvoiceItem', backref='invoice', lazy=True, cascade="all, delete-orphan")
 
     
@@ -979,6 +981,7 @@ def get_daily_sales_for_date(date_str):
         'id': inv.id,
         'customer_name': inv.customer_name,
         'grand_total': inv.grand_total,
+        'order_type': inv.order_type,
         'items': [{
             'medicine_name': item.medicine_name, 
             'quantity': item.quantity, 
@@ -1086,7 +1089,7 @@ def dashboard_stats():
         func.date(CustomerInvoice.bill_date)
     ).all())
 
-    sales_chart = [{'date': dt.strftime('%b %d'), 'sales': float(total)} for dt_str, total in sales_data for dt in [datetime.strptime(dt_str, '%Y-%m-%d')]]
+    sales_chart = [{'date': date_obj.strftime('%b %d'), 'sales': float(total)} for date_obj, total in sales_data]
     
     stats = {
         "totalMedicines": total_medicines_count,
@@ -1215,6 +1218,185 @@ def view_public_bill(invoice_id):
     </html>
     """
     return render_template_string(html_template, invoice=invoice)
+
+@app.route("/api/submit-order", methods=["POST"])
+@login_required
+def submit_order():
+    data = request.get_json()
+    customer_info = data.get('customer')
+    items = data.get('items')
+    payment_mode = data.get('paymentMode', 'Cash')
+    address_info = data.get('address')
+
+    # This logic calculates the total and prepares the items for the invoice.
+    # Importantly, it does NOT deduct stock from the main inventory yet.
+    grand_total = 0
+    invoice_items = []
+    for item in items:
+        amount = int(item['quantity']) * float(item['mrp'])
+        discount = float(item.get('discount', 0))
+        discounted_amount = amount * (1 - discount / 100)
+        grand_total += discounted_amount
+        invoice_items.append(CustomerInvoiceItem(
+            medicine_name=item['name'],
+            quantity=int(item['quantity']),
+            mrp=float(item['mrp']),
+            discount_percent=discount,
+            total_price=discounted_amount
+        ))
+
+    # Prepare all the data for the new invoice record
+    invoice_data = {
+        'customer_name': customer_info.get('name', 'N/A'),
+        'customer_phone': customer_info.get('phone', 'N/A'),
+        'grand_total': grand_total,
+        'items': invoice_items,
+        'payment_mode': payment_mode,
+        'order_type': 'Online',  # Mark this as an online order
+        'status': 'Pending'      # Set the initial status to Pending
+    }
+    # Conditionally add address information if it was provided
+    if address_info:
+        invoice_data.update({
+            'address': address_info.get('address'),
+            'pincode': address_info.get('pincode'),
+            'latitude': address_info.get('lat'),
+            'longitude': address_info.get('lng')
+        })
+    
+    new_invoice = CustomerInvoice(**invoice_data)
+    db.session.add(new_invoice)
+    db.session.commit()
+    return jsonify({"message": "Order submitted for approval.", "invoiceId": new_invoice.id}), 201
+
+@app.route("/api/online-orders")
+@login_required
+def get_online_orders():
+    orders = CustomerInvoice.query.filter_by(order_type='Online').order_by(CustomerInvoice.bill_date.desc()).all()
+    order_list = [{
+        'id': inv.id,
+        'customer_name': inv.customer_name,
+        'bill_date': inv.bill_date.strftime('%d %b %Y, %I:%M %p'),
+        'grand_total': inv.grand_total,
+        'status': inv.status,
+        'items': [{'medicine_name': item.medicine_name, 'quantity': item.quantity} for item in inv.items]
+    } for inv in orders]
+    return jsonify(order_list)
+
+@app.route("/api/orders/<int:order_id>/approve", methods=["PUT"])
+@login_required
+def approve_order(order_id):
+    invoice = CustomerInvoice.query.get_or_404(order_id)
+    if invoice.status != 'Pending':
+        return jsonify({"error": "Order is not pending approval."}), 400
+
+    # --- THIS IS THE NEW, MORE ROBUST LOGIC ---
+    try:
+        # Check all items for sufficient stock BEFORE making any changes
+        for item in invoice.items:
+            # We must query the Medicine table to get the current stock
+            medicine = Medicine.query.filter_by(name=item.medicine_name).first()
+            if not medicine or medicine.quantity < item.quantity:
+                # If any item is out of stock, stop the whole process
+                return jsonify({"error": f"Not enough stock for {item.medicine_name}. Order cannot be approved."}), 400
+
+        # If all stock checks pass, NOW we loop again to deduct quantities
+        for item in invoice.items:
+            medicine = Medicine.query.filter_by(name=item.medicine_name).first()
+            # This check is redundant but safe
+            if medicine:
+                medicine.quantity -= item.quantity
+        
+        # Finally, update the invoice status
+        invoice.status = 'Approved'
+        
+        # Commit all changes (stock deductions and status update) in one transaction
+        db.session.commit()
+        
+        return jsonify({"message": "Order approved successfully."})
+
+    except Exception as e:
+        # If anything goes wrong, roll back all changes to prevent partial updates
+        db.session.rollback()
+        print(f"Error during order approval: {e}") # For debugging on your server
+        return jsonify({"error": "An internal error occurred during approval."}), 500
+
+
+@app.route("/api/pending-orders/check")
+@login_required
+def check_pending_orders():
+    count = CustomerInvoice.query.filter_by(status='Pending', order_type='Online').count()
+    return jsonify({"pending_count": count})
+
+# ADD THESE THREE NEW ROUTES to app1.py
+
+@app.route("/api/orders/<int:order_id>/reject", methods=["PUT"])
+@login_required
+def reject_order(order_id):
+    invoice = CustomerInvoice.query.get_or_404(order_id)
+    if invoice.status != 'Pending':
+        return jsonify({"error": "Order is not pending."}), 400
+    
+    # Rejecting an order simply changes its status. It does not affect stock.
+    invoice.status = 'Rejected'
+    db.session.commit()
+    return jsonify({"message": "Order rejected successfully."})
+
+
+@app.route("/api/orders/<int:order_id>/delete", methods=["DELETE"])
+@login_required
+def delete_order(order_id):
+    invoice = CustomerInvoice.query.get_or_404(order_id)
+    
+    # This is a permanent deletion.
+    db.session.delete(invoice)
+    db.session.commit()
+    return jsonify({"message": "Order deleted successfully."})
+
+
+def sanitize_phone(phone_number):
+    """
+    A robust helper to clean and standardize phone numbers.
+    It removes all non-digit characters.
+    """
+    if not phone_number:
+        return ""
+    return "".join(filter(str.isdigit, phone_number))
+
+
+app.route("/api/order-status/<int:invoice_id>")
+@login_required
+def get_order_status(invoice_id):
+    invoice = CustomerInvoice.query.get_or_404(invoice_id)
+    user = User.query.get(session['user_id'])
+
+    # --- THIS IS THE NEW, MORE ROBUST LOGIC ---
+
+    # 1. Admin Override: If the logged-in user is an admin, always allow access.
+    if session.get('user_role') == 'admin':
+        return jsonify({"status": invoice.status})
+
+    # 2. Sanitize Phone Numbers: Clean both numbers to remove formatting.
+    invoice_phone_sanitized = sanitize_phone(invoice.customer_phone)
+    user_phone_sanitized = sanitize_phone(user.phone)
+    
+    # 3. Handle Empty Numbers: If either number is invalid, deny access.
+    if not invoice_phone_sanitized or not user_phone_sanitized:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    # 4. Flexible Comparison: Check if one number ends with the other.
+    # This correctly handles cases where one has a country code (e.g., '91...')
+    # and the other does not.
+    if not (invoice_phone_sanitized.endswith(user_phone_sanitized) or 
+            user_phone_sanitized.endswith(invoice_phone_sanitized)):
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    # If all checks pass, return the status.
+    return jsonify({"status": invoice.status})
+
+
+
+
 
 # --- UTILITY COMMAND ---
 @app.cli.command("init-db")
