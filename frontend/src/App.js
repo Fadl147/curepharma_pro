@@ -301,7 +301,7 @@ case 'cart':
             address={shippingAddress}
             onOrderPlaced={(invoiceId) => { 
                 setCart([]);
-                sessionStorage.setItem('pendingInvoiceId', invoiceId);
+                setPendingInvoiceId(invoiceId);
                 setActivePage('order-pending');
             }} 
         />
