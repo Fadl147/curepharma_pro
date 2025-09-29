@@ -796,28 +796,28 @@ const OnlineOrdersView = () => {
 
 const StoreView = ({ medicines, onAddToCart, isLoading, onCategorySelect, selectedCategory, clearCategory, onProductSelect }) => (
     <>
-        <div className="mb-12 grid grid-cols-1 lg:grid-cols-5 gap-6 items-center">
+       <div className="mb-12 grid grid-cols-2 gap-4">
             <motion.div 
                 initial={{ opacity: 0, x: -50 }} 
                 animate={{ opacity: 1, x: 0 }} 
                 transition={{ duration: 0.5 }} 
-                className="lg:col-span-3 bg-gradient-to-br from-red-600 to-red-800 p-10 rounded-3xl shadow-2xl text-white"
+                className="col-span-3 bg-gradient-to-br from-red-600 to-red-800 p-10 rounded-3xl shadow-2xl text-white"
             >
-                <h1 className="text-5xl font-black tracking-tight">UP TO 20% OFF</h1>
-                <p className="mt-2 text-2xl font-semibold text-red-100">On All CurePharma Products</p>
+                <h1 className="text-xl sm:text-2xl md:text-3xl font-black tracking-tight">UP TO 20% OFF</h1>
+                <p className="hidden sm:block text-xs md:text-sm mt-2 text-red-100">On All CurePharma Products</p>
                 <p className="mt-4 text-red-200">Unlock exclusive savings on our in-house brands and prioritize your health.</p>
-                <Button className="mt-6 !bg-white !text-red-600 !font-bold hover:!bg-red-100">Explore Deals</Button>
+                <Button className="mt-4 !text-sm !py-2 !px-3 !bg-white !text-red-600 !font-bold hover:!bg-red-100">Explore Deals</Button>
             </motion.div>
             <motion.div 
                 initial={{ opacity: 0, x: 50 }} 
                 animate={{ opacity: 1, x: 0 }} 
                 transition={{ duration: 0.5 }} 
-                className="lg:col-span-2 bg-gradient-to-br from-blue-600 to-indigo-700 p-10 rounded-3xl shadow-2xl text-white"
+                className="col-span-2 bg-gradient-to-br from-blue-600 to-indigo-700 p-10 rounded-3xl shadow-2xl text-white"
             >
-                 <h1 className="text-5xl font-black tracking-tight">Everyday Essentials</h1>
-                 <p className="mt-2 text-2xl font-semibold text-blue-100">Starting at ₹49</p>
+                 <h1 className="text-xl sm:text-2xl md:text-3xl font-black tracking-tight">Everyday Essentials</h1>
+                 <p className="hidden sm:block text-xs md:text-sm mt-2 text-blue-100">Starting at ₹49</p>
                  <p className="mt-4 text-blue-200">Personal care, health devices, and more at unbeatable prices.</p>
-                 <Button className="mt-6 !bg-white !text-blue-600 !font-bold hover:!bg-blue-100">Shop Now</Button>
+                 <Button className="mt-4 !text-sm !py-2 !px-3 !bg-white !text-blue-600 !font-bold hover:!bg-blue-100">Shop Now</Button>
             </motion.div>
         </div>
 
@@ -1100,7 +1100,7 @@ const InventorySystem = ({ user, onLogout }) => {
     };
 
     // Helper component for the sidebar navigation items
-    const NavItem = ({ icon: Icon, label, viewName,setIsMobileMenuOpen }) => {
+  const NavItem = ({ icon: Icon, label, viewName }) => {
         const isSalesView = activeView === 'sales';
         const isActive = activeView === viewName;
         
@@ -1118,7 +1118,7 @@ const InventorySystem = ({ user, onLogout }) => {
             >
                 <Icon className="h-5 w-5 flex-shrink-0" />
                 <AnimatePresence>
-                    {isSidebarExpanded && (
+                    {(isSidebarExpanded || isMobileMenuOpen) && (
                         <motion.span 
                             initial={{ opacity: 0, width: 0 }}
                             animate={{ opacity: 1, width: 'auto' }}
@@ -1199,18 +1199,26 @@ const InventorySystem = ({ user, onLogout }) => {
                 </div>
             </Modal>
             <motion.aside
-                className={`fixed inset-y-0 left-0 z-40 p-4 flex flex-col shrink-0 shadow-lg transition-transform duration-300 ease-in-out md:static md:translate-x-0 ${
-                    activeView === 'sales' ? 'bg-gray-900 border-r border-gray-800' : 'bg-blue-600'
-                }`}
-                onMouseEnter={() => setIsSidebarExpanded(true)}
-                onMouseLeave={() => setIsSidebarExpanded(false)}
-                animate={{ width: isSidebarExpanded ? '16rem' : '4.5rem' }}
-                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            >
+    className={`fixed inset-y-0 left-0 z-40 p-4 flex flex-col shrink-0 shadow-lg md:static ${
+        activeView === 'sales' ? 'bg-gray-900 border-r border-gray-800' : 'bg-blue-600'
+    }`}
+    onMouseEnter={() => setIsSidebarExpanded(true)}
+    onMouseLeave={() => setIsSidebarExpanded(false)}
+    // MODIFIED: Animate 'x' for mobile and 'width' for desktop
+    animate={
+        isMobileMenuOpen 
+        ? { x: 0, width: '16rem' } 
+        : window.innerWidth < 768 
+          ? { x: '-100%', width: '16rem' } 
+          : { width: isSidebarExpanded ? '16rem' : '4.5rem' }
+    }
+    transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+    initial={false} // Prevents animation on initial page load
+>
                 <button onClick={() => setActiveView('about')} className="flex items-center space-x-2 mb-8 px-2 overflow-hidden text-left w-full flex-shrink-0">
                     <Pill className="h-8 w-8 text-white flex-shrink-0" />
                     <AnimatePresence>
-                        {isSidebarExpanded && (
+                       {(isSidebarExpanded || isMobileMenuOpen) && (
                             <motion.span 
                                 initial={{ opacity: 0 }} 
                                 animate={{ opacity: 1 }} 
@@ -1226,19 +1234,19 @@ const InventorySystem = ({ user, onLogout }) => {
 
                 <div className="flex-grow overflow-y-auto -mr-2 pr-2 custom-scrollbar">
                     <nav className="space-y-1">
-                        <NavItem icon={LayoutDashboard} label="Dashboard" viewName="dashboard" setIsMobileMenuOpen={setIsMobileMenuOpen} />
-                        <NavItem icon={Package} label="Medicines" viewName="medicines" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
-                        <NavItem icon={Receipt} label="New Bill" viewName="billing" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
-                        <NavItem icon={ShoppingBag} label="Online Orders" viewName="online-orders" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
-                        <NavItem icon={CalendarDays} label="Daily Sales" viewName="daily-sales" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
-                        <NavItem icon={TrendingUp} label=" Advance Sales" viewName="sales" setIsMobileMenuOpen={setIsMobileMenuOpen} />
-                        <NavItem icon={BellRing} label="Reminders" viewName="alerts" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
-                        <NavItem icon={Building} label="Agency Invoices" viewName="purchase-invoices" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
-                        <NavItem icon={ClipboardList} label="Customer Bills" viewName="customer-bills" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
-                        <NavItem icon={Wallet} label="Advances" viewName="advances" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
-                        <NavItem icon={ClipboardX} label="Shortages" viewName="shortages" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
-                        <NavItem icon={History} label="Customer History" viewName="customer-history" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
-                        <NavItem icon={Upload} label="Import CSV" viewName="import" setIsMobileMenuOpen={setIsMobileMenuOpen}/>
+                        <NavItem icon={LayoutDashboard} label="Dashboard" viewName="dashboard"  />
+                        <NavItem icon={Package} label="Medicines" viewName="medicines" />
+                        <NavItem icon={Receipt} label="New Bill" viewName="billing" />
+                        <NavItem icon={ShoppingBag} label="Online Orders" viewName="online-orders"/>
+                        <NavItem icon={CalendarDays} label="Daily Sales" viewName="daily-sales" />
+                        <NavItem icon={TrendingUp} label=" Advance Sales" viewName="sales" />
+                        <NavItem icon={BellRing} label="Reminders" viewName="alerts" />
+                        <NavItem icon={Building} label="Agency Invoices" viewName="purchase-invoices" />
+                        <NavItem icon={ClipboardList} label="Customer Bills" viewName="customer-bills" />
+                        <NavItem icon={Wallet} label="Advances" viewName="advances" />
+                        <NavItem icon={ClipboardX} label="Shortages" viewName="shortages" />
+                        <NavItem icon={History} label="Customer History" viewName="customer-history" />
+                        <NavItem icon={Upload} label="Import CSV" viewName="import" />
                     </nav>
                 </div>
 
@@ -1249,7 +1257,7 @@ const InventorySystem = ({ user, onLogout }) => {
                     >
                         <LogOut className="h-5 w-5 flex-shrink-0" />
                         <AnimatePresence>
-                            {isSidebarExpanded && (
+                         {(isSidebarExpanded || isMobileMenuOpen) && (
                                 <motion.span 
                                     initial={{ opacity: 0, width: 0 }} 
                                     animate={{ opacity: 1, width: 'auto' }} 
@@ -1309,7 +1317,7 @@ const MedicinesView = () => {
                 </Button>
             </div>
             
-            <div className="mb-6 flex gap-2">
+            <div className="mb-6 flex flex-col sm:flex-row gap-2">
                 <div className="relative flex-grow">
                     <Input type="text" placeholder={`Search by ${searchBy}...`} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10"/>
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -1679,37 +1687,77 @@ const BillingView = ({ customer, setCustomer, items, setItems, onBillCreated, ed
                             </div>
                         </div>
                     </div>
-                    <div className="flow-root">
-                        {/* Table remains the same */}
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead>
-                                <tr>
-                                    <th className="py-2 text-left text-sm font-medium text-gray-500">Medicine</th>
-                                    <th className="py-2 text-left text-sm font-medium text-gray-500">Qty</th>
-                                    <th className="py-2 text-left text-sm font-medium text-gray-500">PTR</th>
-                                    <th className="py-2 text-left text-sm font-medium text-gray-500">MRP</th>
-                                    <th className="py-2 text-left text-sm font-medium text-gray-500">Discount (%)</th>
-                                    <th className="py-2 text-left text-sm font-medium text-gray-500">Reminder (Days)</th>
-                                    <th className="py-2 text-left text-sm font-medium text-gray-500">Total</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-200">
-                                {items.map(item => (
-                                    <tr key={item.id}>
-                                        <td className="py-2 font-medium">{item.name}</td>
-                                        <td><Input type="number" value={item.quantity} onChange={e => updateItem(item.id, 'quantity', parseInt(e.target.value) || 1)} className="w-16 p-1"/></td>
-                                        <td><Input type="number" step="0.01" value={item.ptr || ''} onChange={e => updateItem(item.id, 'ptr', parseFloat(e.target.value) || 0)} className="w-24 p-1" placeholder="Purchase Price"/></td>
-                                        <td><Input type="number" step="0.01" value={item.mrp} onChange={e => updateItem(item.id, 'mrp', parseFloat(e.target.value) || 0)} className="w-24 p-1"/></td>
-                                        <td><Input type="number" value={item.discount} onChange={e => updateItem(item.id, 'discount', parseFloat(e.target.value) || 0)} className="w-16 p-1"/></td>
-                                        <td><Input type="number" placeholder="e.g., 10" value={item.reminder_days || ''} onChange={e => updateItem(item.id, 'reminder_days', e.target.value)} className="w-24 p-1"/></td>
-                                        <td>₹{((item.quantity || 0) * (item.mrp || 0) * (1 - (item.discount || 0) / 100)).toFixed(2)}</td>
-                                        <td><button onClick={() => removeItem(item.id)}><MinusCircle className="h-5 w-5 text-red-500"/></button></td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                    <div>
+    {/* --- MOBILE CARD VIEW (shows on small screens) --- */}
+    <div className="md:hidden space-y-4">
+        {items.map(item => (
+            <div key={item.id} className="bg-gray-50 border rounded-lg p-4">
+                <div className="flex justify-between items-center mb-4">
+                    <p className="font-bold text-lg">{item.name}</p>
+                    <button onClick={() => removeItem(item.id)}><MinusCircle className="h-6 w-6 text-red-500"/></button>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <label className="font-medium text-gray-600 block mb-1">Qty</label>
+                        <Input type="number" value={item.quantity} onChange={e => updateItem(item.id, 'quantity', parseInt(e.target.value) || 1)} className="w-full p-2"/>
                     </div>
+                    <div>
+                        <label className="font-medium text-gray-600 block mb-1">MRP</label>
+                        <Input type="number" step="0.01" value={item.mrp} onChange={e => updateItem(item.id, 'mrp', parseFloat(e.target.value) || 0)} className="w-full p-2"/>
+                    </div>
+                    <div>
+                        <label className="font-medium text-gray-600 block mb-1">Discount %</label>
+                        <Input type="number" value={item.discount} onChange={e => updateItem(item.id, 'discount', parseFloat(e.target.value) || 0)} className="w-full p-2"/>
+                    </div>
+                    <div>
+                        <label className="font-medium text-gray-600 block mb-1">PTR</label>
+                        <Input type="number" step="0.01" value={item.ptr || ''} onChange={e => updateItem(item.id, 'ptr', parseFloat(e.target.value) || 0)} className="w-full p-2" placeholder="Purchase Price"/>
+                    </div>
+                    <div className="col-span-2">
+                        <label className="font-medium text-gray-600 block mb-1">Reminder (Days)</label>
+                        <Input type="number" placeholder="e.g., 10" value={item.reminder_days || ''} onChange={e => updateItem(item.id, 'reminder_days', e.target.value)} className="w-full p-2"/>
+                    </div>
+                </div>
+                <div className="text-right font-bold text-lg mt-4 border-t pt-2">
+                    Total: ₹{((item.quantity || 0) * (item.mrp || 0) * (1 - (item.discount || 0) / 100)).toFixed(2)}
+                </div>
+            </div>
+        ))}
+    </div>
+
+    {/* --- DESKTOP TABLE VIEW (hidden on small screens) --- */}
+    <div className="hidden md:block overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+            <thead>
+                <tr>
+                    <th className="py-2 text-left text-sm font-medium text-gray-500">Medicine</th>
+                    <th className="py-2 text-left text-sm font-medium text-gray-500">Qty</th>
+                    <th className="py-2 text-left text-sm font-medium text-gray-500">PTR</th>
+                    <th className="py-2 text-left text-sm font-medium text-gray-500">MRP</th>
+                    <th className="py-2 text-left text-sm font-medium text-gray-500">Discount (%)</th>
+                    <th className="py-2 text-left text-sm font-medium text-gray-500">Reminder (Days)</th>
+                    <th className="py-2 text-left text-sm font-medium text-gray-500">Total</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+                {items.map(item => (
+                    <tr key={item.id}>
+                        <td className="py-2 font-medium">{item.name}</td>
+                        <td><Input type="number" value={item.quantity} onChange={e => updateItem(item.id, 'quantity', parseInt(e.target.value) || 1)} className="w-16 p-1"/></td>
+                        <td><Input type="number" step="0.01" value={item.ptr || ''} onChange={e => updateItem(item.id, 'ptr', parseFloat(e.target.value) || 0)} className="w-24 p-1" placeholder="Purchase Price"/></td>
+                        <td><Input type="number" step="0.01" value={item.mrp} onChange={e => updateItem(item.id, 'mrp', parseFloat(e.target.value) || 0)} className="w-24 p-1"/></td>
+                        <td><Input type="number" value={item.discount} onChange={e => updateItem(item.id, 'discount', parseFloat(e.target.value) || 0)} className="w-16 p-1"/></td>
+                        <td><Input type="number" placeholder="e.g., 10" value={item.reminder_days || ''} onChange={e => updateItem(item.id, 'reminder_days', e.target.value)} className="w-24 p-1"/></td>
+                        <td>₹{((item.quantity || 0) * (item.mrp || 0) * (1 - (item.discount || 0) / 100)).toFixed(2)}</td>
+                        <td><button onClick={() => removeItem(item.id)}><MinusCircle className="h-5 w-5 text-red-500"/></button></td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    </div>
+</div>
+                    
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 self-start">
                     {/* Customer Details section remains the same */}

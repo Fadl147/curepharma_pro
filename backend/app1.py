@@ -1089,7 +1089,7 @@ def dashboard_stats():
         func.date(CustomerInvoice.bill_date)
     ).all())
 
-    sales_chart = [{'date': date_obj.strftime('%b %d'), 'sales': float(total)} for date_obj, total in sales_data]
+    sales_chart = [{'date': datetime.strptime(date_str, '%Y-%m-%d').strftime('%b %d'), 'sales': float(total)} for date_str, total in sales_data]
     
     stats = {
         "totalMedicines": total_medicines_count,
