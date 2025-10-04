@@ -842,7 +842,7 @@ const StoreView = ({ medicines, onAddToCart, isLoading, onCategorySelect, select
                 <Button variant="secondary" onClick={clearCategory}>Clear Filter</Button>
             )}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
             {isLoading ? (
                 Array.from({ length: 8 }).map((_, i) => <ProductSkeleton key={i} />)
             ) : medicines.length > 0 ? (
@@ -936,19 +936,19 @@ const ProductCard = ({ med, onAddToCart, onProductSelect }) => (
     >
         {/* The main card is now a button for navigation */}
         <button onClick={() => onProductSelect(med.id)} className="text-left w-full h-full flex flex-col">
-            <div className="h-48 bg-gray-100 flex items-center justify-center relative">
-                <Package size={48} className="text-gray-300 group-hover:text-blue-500 transition-colors duration-300" />
+            <div className="h-28 bg-gray-100 flex items-center justify-center relative">
+                <Package size={38} className="text-gray-300 group-hover:text-blue-500 transition-colors duration-300" />
             </div>
-            <div className="p-6 flex flex-col flex-grow">
-                <h3 className="text-lg font-bold text-gray-800 truncate">{med.name}</h3>
-                <p className="text-3xl font-black bg-gradient-to-r from-slate-800 to-slate-600 text-transparent bg-clip-text mt-2">
+            <div className="p-3 flex flex-col">
+                <h3 className="text-xl font-bold text-gray-800 truncate">{med.name}</h3>
+                <p className="text-l font-black bg-gradient-to-r from-slate-800 to-slate-600 text-transparent bg-clip-text mt-2">
                     ₹{med.mrp?.toFixed(2)}
                 </p>
-                <div className="mt-auto pt-4"> {/* Spacer */} </div>
+              
             </div>
         </button>
         {/* The Add to Cart button is separate to prevent navigation */}
-        <div className="p-6 pt-0">
+        <div className="p-3 pt-0">
              <Button 
                 onClick={(e) => {
                     e.stopPropagation(); // Prevents the card's click event from firing
