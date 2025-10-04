@@ -102,6 +102,7 @@ class Medicine(db.Model):
     netvalue = db.Column(db.Float)
     category = db.Column(db.String(50), nullable=True, default='General')
     formula = db.Column(db.String(255), nullable=True)
+    image_url = db.Column(db.String(255), nullable=True) # <-- ADD THIS LINE
 
 
 
@@ -488,17 +489,17 @@ def get_medicines():
         sixty_days_later = today + timedelta(days=60)
         base_query = base_query.filter(Medicine.expiry_date.between(today, sixty_days_later))
 
-   # --- THIS IS THE FIX ---
-    # Order the results first
+   # Order the results
     base_query = base_query.order_by(Medicine.name)
 
-    # Only apply the limit if a search term is present
+    # If it's a search, limit to 10 for autocomplete-style results
     if query_term:
         base_query = base_query.limit(10)
-
-    medicines = base_query.all()
-    # --- END OF FIX ---
+    # ELSE IF it's the default home page (no search, category, or filter), limit to 50
+    elif not category_param and not filter_param:
+        base_query = base_query.limit(50)
     
+    medicines = base_query.all()
     return jsonify([med.to_dict() for med in medicines])
 
 
