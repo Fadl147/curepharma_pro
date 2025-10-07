@@ -276,35 +276,45 @@ def get_advanced_sales_report():
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid or missing date range. Please provide start_date and end_date in YYYY-MM-DD format."}), 400
 
+    date_filter = CustomerInvoice.bill_date.between(start_date, end_date + timedelta(days=1))
+
     # 1. Calculate Total Sales and Profit for the period
     period_totals = db.session.query(
         func.sum(CustomerInvoice.grand_total).label('total_sales'),
         func.sum(
-            ((CustomerInvoiceItem.mrp * (1 - CustomerInvoiceItem.discount_percent / 100)) - (Medicine.ptr * (1 + Medicine.gst / 100))) * CustomerInvoiceItem.quantity
+            (CustomerInvoiceItem.mrp * (1 - CustomerInvoiceItem.discount_percent / 100) - Medicine.ptr) * CustomerInvoiceItem.quantity
         ).label('total_profit')
-    ).select_from(CustomerInvoice).join(CustomerInvoiceItem, ...).join(Medicine, ...).filter(...).first()
+    ).select_from(CustomerInvoice).join(
+        CustomerInvoiceItem, CustomerInvoice.id == CustomerInvoiceItem.invoice_id
+    ).join(
+        Medicine, CustomerInvoiceItem.medicine_name == Medicine.name
+    ).filter(date_filter).first()
 
+
+    # 2. Daily Trends
     daily_trends = db.session.query(
         func.date(CustomerInvoice.bill_date).label('date'),
         func.sum(CustomerInvoice.grand_total).label('sales'),
         func.sum(
-            ((CustomerInvoiceItem.mrp * (1 - CustomerInvoiceItem.discount_percent / 100)) - (Medicine.ptr * (1 + Medicine.gst / 100))) * CustomerInvoiceItem.quantity
+            (CustomerInvoiceItem.mrp * (1 - CustomerInvoiceItem.discount_percent / 100) - Medicine.ptr) * CustomerInvoiceItem.quantity
         ).label('profit')
-    ).select_from(CustomerInvoice).join(CustomerInvoiceItem, ...).join(Medicine, ...).filter(...).group_by(...).order_by(...).all()
+    ).select_from(CustomerInvoice).join(
+        CustomerInvoiceItem, CustomerInvoice.id == CustomerInvoiceItem.invoice_id
+    ).join(
+        Medicine, CustomerInvoiceItem.medicine_name == Medicine.name
+    ).filter(date_filter).group_by(
+        func.date(CustomerInvoice.bill_date)
+    ).order_by(
+        func.date(CustomerInvoice.bill_date)
+    ).all()
 
-    top_profitable_products = db.session.query(
-        CustomerInvoiceItem.medicine_name,
-        func.sum(
-            ((CustomerInvoiceItem.mrp * (1 - CustomerInvoiceItem.discount_percent / 100)) - (Medicine.ptr * (1 + Medicine.gst / 100))) * CustomerInvoiceItem.quantity
-        ).label('total_profit')
-    ).select_from(CustomerInvoice).join(CustomerInvoiceItem, ...).join(Medicine, ...).filter(...).group_by(...).order_by(...).limit(5).all()
 
     # 3. Get Top 5 Best-Selling Products (by quantity)
     top_selling_products = db.session.query(
         CustomerInvoiceItem.medicine_name,
         func.sum(CustomerInvoiceItem.quantity).label('total_quantity_sold')
     ).join(CustomerInvoice, CustomerInvoice.id == CustomerInvoiceItem.invoice_id)\
-     .filter(CustomerInvoice.bill_date.between(start_date, end_date + timedelta(days=1)))\
+     .filter(date_filter)\
      .group_by(CustomerInvoiceItem.medicine_name)\
      .order_by(func.sum(CustomerInvoiceItem.quantity).desc())\
      .limit(5)\
@@ -314,14 +324,14 @@ def get_advanced_sales_report():
     top_profitable_products = db.session.query(
         CustomerInvoiceItem.medicine_name,
         func.sum(
-            (CustomerInvoiceItem.mrp - (Medicine.ptr * (1 + Medicine.gst / 100))) * CustomerInvoiceItem.quantity
+            (CustomerInvoiceItem.mrp * (1 - CustomerInvoiceItem.discount_percent / 100) - Medicine.ptr) * CustomerInvoiceItem.quantity
         ).label('total_profit')
     ).select_from(CustomerInvoice)\
      .join(CustomerInvoiceItem, CustomerInvoice.id == CustomerInvoiceItem.invoice_id)\
      .join(Medicine, CustomerInvoiceItem.medicine_name == Medicine.name)\
-     .filter(CustomerInvoice.bill_date.between(start_date, end_date + timedelta(days=1)))\
+     .filter(date_filter)\
      .group_by(CustomerInvoiceItem.medicine_name)\
-     .order_by(func.sum((CustomerInvoiceItem.mrp - (Medicine.ptr * (1 + Medicine.gst / 100))) * CustomerInvoiceItem.quantity).desc())\
+     .order_by(func.sum((CustomerInvoiceItem.mrp * (1 - CustomerInvoiceItem.discount_percent / 100) - Medicine.ptr) * CustomerInvoiceItem.quantity).desc())\
      .limit(5)\
      .all()
 
@@ -331,8 +341,7 @@ def get_advanced_sales_report():
             "total_profit": float(period_totals.total_profit or 0)
         },
         "daily_trends": [
-            # The database returns a string, so we use it directly. No .strftime() needed.
-            {"date": d.date, "sales": float(d.sales or 0), "profit": float(d.profit or 0)} for d in daily_trends
+            {"date": d.date.strftime('%Y-%m-%d'), "sales": float(d.sales or 0), "profit": float(d.profit or 0)} for d in daily_trends
         ],
         "top_selling_products": [
             {"name": p.medicine_name, "value": int(p.total_quantity_sold)} for p in top_selling_products
@@ -1090,7 +1099,7 @@ def dashboard_stats():
         func.date(CustomerInvoice.bill_date)
     ).all())
 
-    sales_chart = [{'date': datetime.strptime(date_str, '%Y-%m-%d').strftime('%b %d'), 'sales': float(total)} for date_str, total in sales_data]
+    sales_chart = [{'date': date_obj.strftime('%b %d'), 'sales': float(total)} for date_obj, total in sales_data]
     
     stats = {
         "totalMedicines": total_medicines_count,
