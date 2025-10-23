@@ -264,15 +264,18 @@ const CustomerStore = ({ user, onLogout, onLoginRequest }) => {
     };
 
     const handleProceedToCheckout = () => {
-        if (user) {
-            // If the user is logged in, go to the checkout page as normal.
-            setActivePage('address');
-        } else {
-            // If the user is a guest, call the onLoginRequest function
-            // which opens the login modal.
-            onLoginRequest();
-        }
-    };
+    // ADD THIS CHECK
+    if (cartTotal < 499) {
+        alert("Minimum order value is ₹499 to proceed.");
+        return; // Stop the function
+    }
+    
+    if (user) {
+        setActivePage('address');
+    } else {
+        onLoginRequest();
+    }
+};
 
     // --- RENDER LOGIC ---
     const renderContent = () => {
@@ -1077,7 +1080,14 @@ const CartView = ({ cart, updateCartQuantity, cartTotal, onCheckout, onContinueS
                     <div className="text-right">
                         <p className="text-gray-500">Grand Total</p>
                         <p className="text-4xl font-extrabold text-gray-900">₹{cartTotal.toFixed(2)}</p>
-                        <Button onClick={onCheckout} className="mt-4 !py-3 !px-8 !text-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:shadow-xl transform hover:scale-105 transition-all">Proceed to Checkout</Button>
+                        {cartTotal >= 499 ? (
+    <Button onClick={onCheckout} className="mt-4 !py-3 !px-8 !text-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:shadow-xl transform hover:scale-105 transition-all">
+        Proceed to Checkout
+    </Button>
+) : (
+    <p className="mt-4 text-red-600 font-semibold text-center">Minimum order value is ₹499</p>
+)}
+                    
                     </div>
                 </div>
             </>)
@@ -2030,17 +2040,42 @@ const createWhatsAppLink = (bill) => {
 
 
 const createWhatsAppLinkForBill = (bill) => {
-    let message = `*Thank you for your purchase from CurePharma X!*\n\n*Invoice #${bill.id}*\n\n`;
+    // Start the message with the customer's name (assuming bill.customer_name exists)
+    let message = `Hi ${bill.customer_name || 'Valued Customer'},\n`; // Use a fallback if name is missing
+
+    // Add the static introductory lines
+    message += ` USE THIS CHAT FOR ANY ONLINE ORDERS\n`;
+    message += `Thank you for your purchase from CurePharma !,\n`;
+    message += `SHOP AGAIN\n\n`; // Add extra newline for spacing
+
+    // Add the invoice number
+    message += `Invoice #${bill.id}\n\n`; // Remove asterisks and add extra newline
+
+    // Add each item from the bill
     bill.items.forEach(item => {
         const itemTotal = item.quantity * item.mrp;
+        // Keep the existing item format
         message += `- ${item.medicine_name} (x${item.quantity}): ₹${itemTotal.toFixed(2)}\n`;
     });
-    message += `\n*Grand Total: ₹${bill.grand_total.toFixed(2)}*`;
-    message += '\n *USE THIS CHAT FOR ANY FURTHER ORDERS :)*';
+
+    // Add the grand total
+    message += `\nGrand Total: ₹${bill.grand_total.toFixed(2)}\n`; // Remove asterisks
+
+    // Add the closing lines
+    message += `📎 Bill attached — keep it for your records.\n`;
+    message += `💚 Wishing you a speedy recovery!\n`;
+    message += `— Team CurePharma`;
+
+    // Encode the message for the URL
     const encodedMessage = encodeURIComponent(message);
+
+    // Sanitize the phone number
     const sanitizedPhone = bill.customer_phone.replace(/[^0-9]/g, '');
+
+    // Return the final WhatsApp link
     return `https://web.whatsapp.com/send?phone=${sanitizedPhone}&text=${encodedMessage}`;
 };
+
 
 // --- NEW: Helper function for reminder messages ---
 const createReminderWhatsAppLink = (reminder) => {
