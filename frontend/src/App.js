@@ -164,6 +164,8 @@ const CustomerStore = ({ user, onLogout, onLoginRequest }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [shippingAddress, setShippingAddress] = useState(null);
     const [pendingInvoiceId, setPendingInvoiceId] = useState(null);
+    const [addToCartModalItem, setAddToCartModalItem] = useState(null);
+    const [showAddedToCartToast, setShowAddedToCartToast] = useState(false);
     const [cart, setCart] = useState(() => {
         
         try {
@@ -221,17 +223,30 @@ const CustomerStore = ({ user, onLogout, onLoginRequest }) => {
             });
     };
 
-    // --- CART LOGIC ---
-    const addToCart = (medicine) => {
+   // This function opens the modal when a user clicks "Add to Cart"
+    const handleAddToCartClick = (medicine) => {
+        setAddToCartModalItem(medicine);
+    };
+
+    // This function is called from the modal to finalize adding the item
+    const confirmAddToCart = (medicine, quantity) => {
         setCart(prevCart => {
             const existingItem = prevCart.find(item => item.id === medicine.id);
             if (existingItem) {
-                return prevCart.map(item => item.id === medicine.id ? { ...item, quantity: item.quantity + 1 } : item);
+                // If item exists, update its quantity
+                return prevCart.map(item => 
+                    item.id === medicine.id ? { ...item, quantity: existingItem.quantity + quantity } : item
+                );
             } else {
-                return [...prevCart, { ...medicine, quantity: 1 }];
+                // Otherwise, add the new item with the specified quantity
+                return [...prevCart, { ...medicine, quantity: quantity }];
             }
         });
+        setAddToCartModalItem(null); // Close the modal
+        setShowAddedToCartToast(true); // Show the toast notification
+        setTimeout(() => setShowAddedToCartToast(false), 3000); // Hide toast after 3 seconds
     };
+    
     const updateCartQuantity = (medicineId, quantity) => {
         const newQuantity = Math.max(0, quantity);
         if (newQuantity === 0) {
@@ -302,7 +317,7 @@ case 'cart':
             onOrderPlaced={(invoiceId) => { 
                 setCart([]);
                 setPendingInvoiceId(invoiceId);
-                setActivePage('order-pending');
+                setActivePage('order-success');
             }} 
         />
     ) : (
@@ -316,6 +331,12 @@ case 'cart':
                 return <OrderPendingView invoiceId={pendingInvoiceId}
                  onBackToStore={() => setActivePage('store')}
                 onViewOrders={() => setActivePage('orderHistory')} />;
+
+                 case 'order-success':
+            return <OrderSuccessView 
+                onBackToStore={() => setActivePage('store')}
+                onViewOrders={() => setActivePage('orderHistory')} 
+            />;
                 
             case 'orderHistory': return <OrderHistoryView onBackToStore={() => setActivePage('store')} />;
              case 'productDetail':
@@ -324,12 +345,12 @@ case 'cart':
                 }
                 return <ProductDetailView 
                             medicine={selectedMedicine} 
-                            onAddToCart={addToCart} 
+                            onAddToCart={handleAddToCartClick} 
                             onBackToStore={() => setActivePage('store')} 
                        />;
             default: return <StoreView 
                 medicines={medicines} 
-                onAddToCart={addToCart} 
+                onAddToCart={handleAddToCartClick} 
                 isLoading={isLoading} 
                 onCategorySelect={handleCategorySelect} 
                 selectedCategory={selectedCategory} 
@@ -409,6 +430,25 @@ case 'cart':
                     </div>
                 </div>
             </header>
+            <AddToCartModal 
+            item={addToCartModalItem} 
+            onConfirm={confirmAddToCart}
+            onClose={() => setAddToCartModalItem(null)}
+        />
+
+        <AnimatePresence>
+            {showAddedToCartToast && (
+                <motion.div
+                    initial={{ opacity: 0, y: 50, scale: 0.3 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.5, transition: { duration: 0.2 } }}
+                    className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/70 text-white px-6 py-3 rounded-full z-50 flex items-center space-x-2"
+                >
+                    <CheckCircle2 size={20} />
+                    <span>Added to Cart</span>
+                </motion.div>
+            )}
+        </AnimatePresence>
 
             <main className="container mx-auto px-6 py-8">
                  <AnimatePresence mode="wait">
@@ -962,6 +1002,55 @@ const ProductCard = ({ med, onAddToCart, onProductSelect }) => (
     </motion.div>
 );
 
+
+const AddToCartModal = ({ item, onConfirm, onClose }) => {
+    const [quantity, setQuantity] = useState(1);
+
+    // Reset quantity to 1 whenever a new item is selected for the modal
+    useEffect(() => {
+        if (item) {
+            setQuantity(1);
+        }
+    }, [item]);
+
+    if (!item) return null;
+
+    return (
+        <Modal isOpen={!!item} onClose={onClose} size="md">
+            <div className="p-6">
+                <h2 className="text-2xl font-bold mb-4">Add Item to Cart</h2>
+                <div className="bg-gray-50 p-4 rounded-lg border">
+                    <h3 className="text-lg font-semibold">{item.name}</h3>
+                    {item.formula && <p className="text-sm text-gray-500 mt-1">Formula: {item.formula}</p>}
+                    <p className="text-2xl font-bold text-blue-600 mt-2">₹{item.mrp?.toFixed(2)}</p>
+                </div>
+                
+                <div className="my-6">
+                    <label className="font-medium text-gray-700 block mb-2 text-center">Quantity</label>
+                    <div className="flex items-center justify-center">
+                        <Button variant="secondary" onClick={() => setQuantity(q => Math.max(1, q - 1))}>-</Button>
+                        <Input 
+                            type="number" 
+                            value={quantity} 
+                            onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))} 
+                            className="w-20 text-center mx-2" 
+                        />
+                        <Button variant="secondary" onClick={() => setQuantity(q => q + 1)}>+</Button>
+                    </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
+                    <Button variant="secondary" onClick={onClose}>Cancel</Button>
+                    <Button onClick={() => onConfirm(item, quantity)}>
+                        <PlusCircle size={20} />
+                        <span>Add to Cart</span>
+                    </Button>
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 const ProductSkeleton = () => (
     <div className="bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col animate-pulse">
         <div className="h-48 bg-slate-200"></div>
@@ -993,6 +1082,24 @@ const CartView = ({ cart, updateCartQuantity, cartTotal, onCheckout, onContinueS
                 </div>
             </>)
         }
+    </div>
+);
+
+
+const OrderSuccessView = ({ onBackToStore, onViewOrders }) => (
+    <div className="bg-white p-8 rounded-2xl shadow-xl max-w-lg mx-auto text-center">
+        <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-6" />
+        <h1 className="text-2xl font-bold mb-4 text-gray-800">Order Placed Successfully!</h1>
+        <p className="text-gray-600">Thank you for your purchase. Your order is being prepared for delivery.</p>
+        <div className="flex justify-center space-x-4 mt-8">
+            <Button onClick={onBackToStore} variant="secondary">
+                <ArrowLeft size={20} />
+                <span>Continue Shopping</span>
+            </Button>
+            <Button onClick={onViewOrders}>
+                View My Orders
+            </Button>
+        </div>
     </div>
 );
 

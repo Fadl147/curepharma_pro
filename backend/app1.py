@@ -777,7 +777,7 @@ def import_medicines_csv():
                 if not medicine_name:
                     continue
 
-                existing_medicine = Medicine.query.filter_by(name=medicine_name).first()
+                existing_medicine = Medicine.query.filter(Medicine.name.ilike(medicine_name)).first()
                 quantity = safe_int(row.get('quantity', '0') or 0)
                 amount = safe_float(row.get('amount', '0').replace('%', '').strip() or 0.0)
                 gst_percent = safe_float(row.get('gst', '0').replace('%', '').strip() or 0.0)
@@ -1238,46 +1238,64 @@ def submit_order():
     payment_mode = data.get('paymentMode', 'Cash')
     address_info = data.get('address')
 
-    # This logic calculates the total and prepares the items for the invoice.
-    # Importantly, it does NOT deduct stock from the main inventory yet.
-    grand_total = 0
-    invoice_items = []
-    for item in items:
-        amount = int(item['quantity']) * float(item['mrp'])
-        discount = float(item.get('discount', 0))
-        discounted_amount = amount * (1 - discount / 100)
-        grand_total += discounted_amount
-        invoice_items.append(CustomerInvoiceItem(
-            medicine_name=item['name'],
-            quantity=int(item['quantity']),
-            mrp=float(item['mrp']),
-            discount_percent=discount,
-            total_price=discounted_amount
-        ))
+    try:
+        # --- NEW: Check all items for sufficient stock BEFORE making any changes ---
+        for item in items:
+            medicine = Medicine.query.filter_by(name=item['name']).first()
+            if not medicine or medicine.quantity < int(item['quantity']):
+                # If any item is out of stock, stop the whole process
+                return jsonify({"error": f"Sorry, {item['name']} is out of stock. Order cannot be placed."}), 400
 
-    # Prepare all the data for the new invoice record
-    invoice_data = {
-        'customer_name': customer_info.get('name', 'N/A'),
-        'customer_phone': customer_info.get('phone', 'N/A'),
-        'grand_total': grand_total,
-        'items': invoice_items,
-        'payment_mode': payment_mode,
-        'order_type': 'Online',  # Mark this as an online order
-        'status': 'Pending'      # Set the initial status to Pending
-    }
-    # Conditionally add address information if it was provided
-    if address_info:
-        invoice_data.update({
-            'address': address_info.get('address'),
-            'pincode': address_info.get('pincode'),
-            'latitude': address_info.get('lat'),
-            'longitude': address_info.get('lng')
-        })
-    
-    new_invoice = CustomerInvoice(**invoice_data)
-    db.session.add(new_invoice)
-    db.session.commit()
-    return jsonify({"message": "Order submitted for approval.", "invoiceId": new_invoice.id}), 201
+        # This logic calculates the total and prepares the items for the invoice.
+        grand_total = 0
+        invoice_items = []
+        for item in items:
+            amount = int(item['quantity']) * float(item['mrp'])
+            discount = float(item.get('discount', 0))
+            discounted_amount = amount * (1 - discount / 100)
+            grand_total += discounted_amount
+            invoice_items.append(CustomerInvoiceItem(
+                medicine_name=item['name'],
+                quantity=int(item['quantity']),
+                mrp=float(item['mrp']),
+                discount_percent=discount,
+                total_price=discounted_amount
+            ))
+
+        # Prepare all the data for the new invoice record
+        invoice_data = {
+            'customer_name': customer_info.get('name', 'N/A'),
+            'customer_phone': customer_info.get('phone', 'N/A'),
+            'grand_total': grand_total,
+            'items': invoice_items,
+            'payment_mode': payment_mode,
+            'order_type': 'Online',
+            'status': 'Approved'      # MODIFIED: Status is now 'Approved' by default
+        }
+        if address_info:
+            invoice_data.update({
+                'address': address_info.get('address'),
+                'pincode': address_info.get('pincode'),
+                'latitude': address_info.get('lat'),
+                'longitude': address_info.get('lng')
+            })
+        
+        new_invoice = CustomerInvoice(**invoice_data)
+        db.session.add(new_invoice)
+
+        # --- NEW: Deduct stock quantities after creating the invoice ---
+        for item in items:
+            medicine = Medicine.query.filter_by(name=item['name']).first()
+            if medicine:
+                medicine.quantity -= int(item['quantity'])
+        
+        db.session.commit()
+        return jsonify({"message": "Order placed successfully!", "invoiceId": new_invoice.id}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error during order submission: {e}")
+        return jsonify({"error": "An internal server error occurred while placing the order."}), 500
 
 @app.route("/api/online-orders")
 @login_required
