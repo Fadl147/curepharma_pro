@@ -157,7 +157,6 @@ const AuthScreen = ({ onLoginSuccess }) => {
         </div>
     );
 };
-
 const CustomerStore = ({ user, onLogout, onLoginRequest }) => {
     // --- STATE MANAGEMENT ---
     const [medicines, setMedicines] = useState([]);
@@ -166,6 +165,7 @@ const CustomerStore = ({ user, onLogout, onLoginRequest }) => {
     const [pendingInvoiceId, setPendingInvoiceId] = useState(null);
     const [addToCartModalItem, setAddToCartModalItem] = useState(null);
     const [showAddedToCartToast, setShowAddedToCartToast] = useState(false);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [cart, setCart] = useState(() => {
         
         try {
@@ -399,6 +399,12 @@ case 'cart':
             </button>
 
                 <div className="container mx-auto px-6 py-4 flex justify-between items-center">
+                <button 
+                onClick={() => { /* Add mobile menu logic later */ }} 
+                className="p-2 rounded-md text-gray-600 hover:bg-gray-100" 
+            >
+                <Menu size={24} />
+            </button>
                     <button onClick={() => { setActivePage('store'); setSelectedCategory(null); setSearchTerm(''); }} className="flex items-center space-x-3">
     <img src={curePharmaLogo} alt="CurePharma Logo" className="h-10" />
     <span className="text-3xl font-bold">
@@ -1509,7 +1515,7 @@ const MedicineForm = ({ medicine, onSave, onCancel }) => {
         image_url: '',
         category: 'General'
     });
-    const categories = ['General', 'Cardiac Care', 'Baby Care', 'Immunity', 'Ortho Care', 'Skin Care', 'Respiratory'];
+    const categories = ['General', 'Cardiac Care', 'Baby Care', 'Immunity', 'Ortho Care', 'Skin Care', 'Respiratory','Antibiotics','Multivitamins', 'Gastritis','Pain-Killers','Diabetes','Cough'];
 
     const totalPurchaseValue = ((parseFloat(formData.amount) || 0) * (parseInt(formData.quantity) || 0)).toFixed(2);
 
@@ -1883,15 +1889,30 @@ const BillingView = ({ customer, setCustomer, items, setItems, onBillCreated, ed
                         <Input type="text" placeholder="Customer Name" value={customer.name} onChange={e => setCustomer({...customer, name: e.target.value})} />
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-1 block">Customer Phone</label>
-                            <div className="flex">
-                                <select value={customer.countryCode} onChange={e => setCustomer({...customer, countryCode: e.target.value})} className="bg-gray-100 border-gray-300 rounded-l-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 border-r-0">
-                                    <option value="91">🇮🇳 +91</option>
-                                    <option value="1">🇺🇸 +1</option>
-                                    <option value="44">🇬🇧 +44</option>
-                                    <option value="971">🇦🇪 +971</option>
-                                </select>
-                                <Input type="tel" placeholder="Phone Number" value={customer.localPhone} onChange={e => setCustomer({...customer, localPhone: e.target.value})} className="rounded-l-none"/>
+                           <div className="flex">
+                            <select value={customer.countryCode} onChange={e => setCustomer({...customer, countryCode: e.target.value})} className="bg-gray-100 border-gray-300 rounded-l-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 border-r-0">
+                                <option value="91">🇮🇳 +91</option>
+                                <option value="1">🇺🇸 +1</option>
+                                <option value="44">🇬🇧 +44</option>
+                                <option value="971">🇦🇪 +971</option>
+                            </select>
+
+                            {/* --- This wrapper adds the counter --- */}
+                            <div className="relative flex-grow">
+                                <Input 
+                                    type="tel" 
+                                    placeholder="Phone Number" 
+                                    value={customer.localPhone} 
+                                    onChange={e => setCustomer({...customer, localPhone: e.target.value})} 
+                                    className="rounded-l-none pr-12" /* Added padding for the counter */
+                                    maxLength={10} /* Added max length */
+                                />
+                                {/* --- This is the new counter --- */}
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                                    {customer.localPhone.length} 
+                                </span>
                             </div>
+                        </div>
                             <div className="h-6 mt-2">
                                 {isHistoryLoading ? (
                                     <p className="text-sm text-gray-500">Searching history...</p>
