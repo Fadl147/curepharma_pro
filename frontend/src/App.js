@@ -165,7 +165,7 @@ const CustomerStore = ({ user, onLogout, onLoginRequest }) => {
     const [pendingInvoiceId, setPendingInvoiceId] = useState(null);
     const [addToCartModalItem, setAddToCartModalItem] = useState(null);
     const [showAddedToCartToast, setShowAddedToCartToast] = useState(false);
-    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
     const [cart, setCart] = useState(() => {
         
         try {
